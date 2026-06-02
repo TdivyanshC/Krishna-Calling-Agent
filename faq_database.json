@@ -1,0 +1,910 @@
+{
+  "faq_system": {
+    "version": "1.0",
+    "language": "hi-IN",
+    "confidence_threshold": 0.20,
+    "categories": [
+      {
+        "id": "delivery_delay",
+        "priority": 1,
+        "keywords": {
+          "primary": [
+            "delivery delay",
+            "delivery nahi aayi",
+            "delivery late",
+            "order delay",
+            "sofa nahi aaya",
+            "furniture nahi aaya",
+            "kab aayega",
+            "kab milega",
+            "delivery kab hogi",
+            "order kab milega",
+            "late delivery",
+            "pending delivery",
+            "delivery status",
+            "tracking",
+            "where is my order",
+            "mera order kahan hai"
+          ],
+          "variations": [
+            "suppose arrive yesterday",
+            "aana chahiye tha",
+            "time pe nahi aaya",
+            "promised delivery",
+            "delivery date cross",
+            "delivery miss",
+            "abhi tak nahi aaya",
+            "kitne din ho gaye",
+            "bohot time ho gaya",
+            "delay kyun",
+            "late kyun",
+            "problem kya hai"
+          ],
+          "fuzzy_match": [
+            "dlvry",
+            "dilvery",
+            "delivry",
+            "dely",
+            "ordr",
+            "aaya",
+            "aya",
+            "nhi",
+            "ni"
+          ]
+        },
+        "response": {
+          "script": "Main aapki pareshani ke liye khed vyakt karti hun. Kripya apne bill ke niche salesperson ka naam check karein. Delivery update ke liye unse sampark karein, woh aapki madad kar sakenge.",
+          "alternative_scripts": [
+            "Main samajhti hun aap pareshan hain. Bill mein jo salesperson ka naam hai, kripya unse contact karein delivery update ke liye. Woh aapko proper information denge.",
+            "Delay ke liye main khed vyakt karti hun. Aapke bill par salesperson details hain, unse baat karke exact delivery date confirm kar sakte hain."
+          ],
+          "follow_up_questions": [
+            "Kya aapke paas bill number hai?",
+            "Kya aapko salesperson ka naam yaad hai?"
+          ],
+          "escalation_keywords": ["complaint", "cancel", "refund", "angry", "bahut zyada", "frustrated"]
+        },
+        "context_tracking": {
+          "requires_info": ["order_number", "salesperson_name"],
+          "next_actions": ["transfer_to_salesperson", "check_order_status"]
+        }
+      },
+      {
+        "id": "store_location",
+        "priority": 2,
+        "keywords": {
+          "primary": [
+            "store location",
+            "shop kahan hai",
+            "showroom kahan",
+            "address",
+            "location",
+            "kahan pe hai",
+            "where is store",
+            "shop address",
+            "visit karna hai",
+            "aana hai",
+            "directions",
+            "rasta",
+            "kaise jaun",
+            "nearest store",
+            "paas mein",
+            "nearby"
+          ],
+          "variations": [
+            "branch kahan",
+            "outlet",
+            "store ki location",
+            "aapka shop",
+            "furniture shop",
+            "krishna furniture kahan",
+            "milega kahan",
+            "dekhne aana hai",
+            "visit karni hai",
+            "aake dekhna hai"
+          ],
+          "city_specific": [
+            "gurgaon",
+            "gurugram",
+            "delhi",
+            "faridabad",
+            "noida",
+            "sector 14",
+            "atul kataria"
+          ]
+        },
+        "response": {
+          "script": "Humare stores multiple locations par hain aapki suvidha ke liye - Gurgaon, Delhi, Faridabad, aur Noida. Kripya batayein aap kis area mein interested hain, main nearest store ke details share karungi.",
+          "conditional_responses": {
+            "gurgaon": "Gurgaon mein humaara head branch Sector 14 mein hai, Atul Kataria Chowk ke paas. Main aapko exact address WhatsApp par share kar sakti hun.",
+            "delhi": "Delhi mein bhi humaara store hai. Aap apna area batayein, main nearest store ka address share karungi.",
+            "faridabad": "Faridabad mein humaara store available hai. Location details WhatsApp par share kar sakti hun.",
+            "noida": "Noida mein bhi humaara store hai. Area bataiye, exact location share karungi."
+          },
+          "follow_up_questions": [
+            "Aap kis area se hain?",
+            "Kaunse city mein store dhundh rahe hain?",
+            "Kya main WhatsApp par address share kar sakti hun?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["preferred_city", "customer_contact"],
+          "next_actions": ["share_location", "send_whatsapp"]
+        }
+      },
+      {
+        "id": "exchange_offer",
+        "priority": 3,
+        "keywords": {
+          "primary": [
+            "exchange offer",
+            "purana furniture",
+            "old furniture",
+            "exchange",
+            "badalna hai",
+            "trade in",
+            "purana dena hai",
+            "old ke badle new",
+            "exchange scheme",
+            "exchange kar sakte",
+            "25 percent",
+            "25%"
+          ],
+          "variations": [
+            "purani sofa",
+            "purana bed",
+            "old sofa exchange",
+            "naya lena hai",
+            "purana exchange",
+            "swap",
+            "replacement",
+            "purana de sakte",
+            "old furniture loge",
+            "exchange policy"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, hum exchange offer provide karte hain. Aap apne purane furniture ke badle mein naya furniture purchase kar sakte hain. Is offer mein aapko 25% + 25% discount milega. Pehle naye furniture ke MRP par 25% discount, phir final bill calculation ke baad remaining amount par additional 25% discount.",
+          "breakdown_explanation": "For example, agar furniture ka MRP 1 lakh hai, toh pehle 25% discount se 75,000 hoga. Uske baad 75,000 par aur 25% discount se final price approximately 56,250 hoga.",
+          "follow_up_questions": [
+            "Aap kaunsa purana furniture exchange karna chahte hain?",
+            "Kya aap naya furniture already select kar chuke hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["old_furniture_type", "new_furniture_interest"],
+          "next_actions": ["calculate_discount", "schedule_visit"]
+        }
+      },
+      {
+        "id": "general_discount_offer",
+        "priority": 3,
+        "keywords": {
+          "primary": [
+            "discount",
+            "offer",
+            "sale",
+            "40 percent",
+            "40%",
+            "koi offer",
+            "discount kitna",
+            "offer chal raha",
+            "discount available",
+            "cheap",
+            "sasta",
+            "kam price",
+            "reduced price",
+            "offer hai kya"
+          ],
+          "variations": [
+            "kuch discount milega",
+            "discount de sakte",
+            "price kam",
+            "offer price",
+            "special price",
+            "discounted",
+            "sale price",
+            "promotional offer",
+            "current offer",
+            "ongoing offer",
+            "abhi kya offer"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, currently hamare paas exciting offer hai - Flat 40% off har naye furniture item ke MRP par. Zyada details aur available collections ke liye store visit karein ya contact karein.",
+          "clarifications": {
+            "applies_to": "Yeh offer sabhi new furniture items par applicable hai.",
+            "validity": "Yeh ongoing offer hai. Latest updates ke liye store visit karein."
+          },
+          "follow_up_questions": [
+            "Aap kis type ka furniture dhundh rahe hain?",
+            "Kya aap specific product ke liye interested hain?"
+          ]
+        },
+        "context_tracking": {
+          "next_actions": ["share_product_catalog", "schedule_visit"]
+        }
+      },
+      {
+        "id": "furniture_types_pricing",
+        "priority": 4,
+        "keywords": {
+          "primary": [
+            "furniture types",
+            "kya kya hai",
+            "products",
+            "collection",
+            "available furniture",
+            "price",
+            "kitna",
+            "cost",
+            "kharcha",
+            "budget",
+            "price range",
+            "kitne mein milega",
+            "what do you have",
+            "options"
+          ],
+          "variations": [
+            "kaunsa furniture",
+            "types of furniture",
+            "varieties",
+            "collection kya hai",
+            "dikhao",
+            "batao kya hai",
+            "list",
+            "catalog",
+            "price list",
+            "range",
+            "options kya hain"
+          ],
+          "product_specific": [
+            "sofa",
+            "bed",
+            "dining table",
+            "wardrobe",
+            "almirah",
+            "chair",
+            "table",
+            "office furniture",
+            "mattress",
+            "curtain",
+            "parda"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, humare paas wide range of wooden furniture hai aur hum deal karte hain home furniture, office furniture, curtains, aur mattresses mein. Collection mein included hai sofas, beds, dining tables, wardrobes, office chairs, workstations aur bahut kuch. Prices product design, size, aur material par depend karti hain. Batayein aap kaunsa product dhundh rahe hain, main available options aur pricing share karungi.",
+          "product_categories": {
+            "home_furniture": ["Sofas", "Beds", "Dining Tables", "Wardrobes", "Living Room Sets"],
+            "office_furniture": ["Office Chairs", "Workstations", "Study Tables", "Office Storage"],
+            "other": ["Curtains", "Mattresses", "Decorative Items"]
+          },
+          "price_ranges": {
+            "budget": "₹5,000 - ₹25,000",
+            "mid_range": "₹25,000 - ₹1,00,000",
+            "premium": "₹1,00,000+"
+          },
+          "follow_up_questions": [
+            "Aap kis range mein dekh rahe hain - Lower, Mid range, ya Premium?",
+            "Home furniture chahiye ya office furniture?",
+            "Koi specific product hai jo aap dhundh rahe hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["budget_range", "furniture_type", "room_type"],
+          "next_actions": ["filter_products", "share_catalog"]
+        }
+      },
+      {
+        "id": "manufacturing",
+        "priority": 5,
+        "keywords": {
+          "primary": [
+            "manufacturing",
+            "factory",
+            "kahan banata",
+            "made in",
+            "import",
+            "imported",
+            "local",
+            "own factory",
+            "apna factory",
+            "manufacturing unit",
+            "kahan se aata",
+            "production"
+          ],
+          "variations": [
+            "banate kahan",
+            "manufacture",
+            "plant",
+            "banaya kahan",
+            "china se",
+            "foreign",
+            "indian",
+            "local made",
+            "indigenous",
+            "domestic"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, hamare apne manufacturing units hain. Hum do manufacturing plants operate karte hain - Kherki Duala aur Bamdoli mein. Hum furniture import nahi karte, sabkuch locally manufacture hota hai pure quality control ke saath.",
+          "quality_assurance": "Apne manufacturing units hone se hum quality par full control rakhte hain aur best products deliver karte hain.",
+          "follow_up_questions": [
+            "Kya aap quality certificate dekhna chahenge?",
+            "Factory visit karna chahenge?"
+          ]
+        }
+      },
+      {
+        "id": "interior_design",
+        "priority": 5,
+        "keywords": {
+          "primary": [
+            "interior",
+            "design",
+            "interior design",
+            "home design",
+            "decoration",
+            "decor",
+            "styling",
+            "interior service",
+            "designer",
+            "layout",
+            "planning"
+          ],
+          "variations": [
+            "ghar ka design",
+            "room design",
+            "interior karte ho",
+            "design help",
+            "decorator",
+            "interior designer",
+            "home interior",
+            "complete interior",
+            "furnishing",
+            "setup"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, hum homes ke liye interior services provide karte hain. Hamare paas dedicated interior design team hai jo aapki space, style, aur requirements ke according aapka dream house design karegi. Humaari team help karegi furniture selection, layouts, décor ideas, curtains, aur complete home interior solutions mein.",
+          "services_included": [
+            "Furniture selection aur placement",
+            "Room layout planning",
+            "Color scheme aur décor consultation",
+            "Curtains aur soft furnishings",
+            "Complete home interior solutions"
+          ],
+          "follow_up_questions": [
+            "Kis room ka interior karwana hai?",
+            "Kya aapka koi specific style preference hai?",
+            "Budget kya hai interior ke liye?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["room_type", "style_preference", "budget"],
+          "next_actions": ["schedule_designer_visit", "share_portfolio"]
+        }
+      },
+      {
+        "id": "pan_india_delivery",
+        "priority": 4,
+        "keywords": {
+          "primary": [
+            "pan india",
+            "delivery",
+            "other state",
+            "dusre state",
+            "bahar",
+            "out of state",
+            "different city",
+            "online order",
+            "website",
+            "nationwide",
+            "all india"
+          ],
+          "variations": [
+            "delhi se bahar",
+            "mumbai se",
+            "bangalore",
+            "chennai",
+            "hyderabad",
+            "pune",
+            "state se bahar",
+            "door deliver",
+            "ship",
+            "courier",
+            "transport"
+          ]
+        },
+        "response": {
+          "script": "Koi issue nahi sir/mam. Hum apni website aapke saath share karenge, aap easily online order place kar sakte hain. Hum Pan India delivery provide karte hain, isliye aapka furniture safely India mein kahin bhi deliver ho sakta hai.",
+          "process": "Online order karne ke baad, hum furniture ko safely pack karke aapke address par deliver karenge. Installation support bhi available hai.",
+          "follow_up_questions": [
+            "Aap kis city mein rehte hain?",
+            "Kya main aapko website link WhatsApp par share kar sakti hun?",
+            "Kis product mein interested hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["delivery_city", "contact_number"],
+          "next_actions": ["share_website", "calculate_delivery_charges"]
+        }
+      },
+      {
+        "id": "store_address_request",
+        "priority": 2,
+        "keywords": {
+          "primary": [
+            "address bhejo",
+            "address share",
+            "location send",
+            "address chahiye",
+            "exact address",
+            "full address",
+            "complete address",
+            "address dedo",
+            "location share karo"
+          ],
+          "variations": [
+            "address kya hai",
+            "pataa",
+            "thikana",
+            "location details",
+            "google maps",
+            "pin location",
+            "landmark",
+            "kaise pahunche"
+          ]
+        },
+        "response": {
+          "script": "Zaroor sir/mam. Kripya apna naam, contact number, aur location share karein. Aapke preferred area ke basis par hum nearest store ka address aur location details WhatsApp par share karenge.",
+          "alternative_script": "Ji bilkul. Aap mujhe apna mobile number aur area bata dijiye, main turant WhatsApp par nearest showroom ka complete address Google Maps link ke saath share karungi.",
+          "follow_up_questions": [
+            "Aapka naam kya hai?",
+            "Contact number kya hai?",
+            "Aap kis area se hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["customer_name", "contact_number", "preferred_area"],
+          "next_actions": ["send_whatsapp_location"]
+        }
+      },
+      {
+        "id": "delivery_charges",
+        "priority": 4,
+        "keywords": {
+          "primary": [
+            "delivery charges",
+            "delivery cost",
+            "delivery ka paisa",
+            "delivery kitna",
+            "transport charges",
+            "shipping charges",
+            "free delivery",
+            "delivery free hai"
+          ],
+          "variations": [
+            "delivery mein kitna lagega",
+            "delivery ka charge",
+            "transport ka paisa",
+            "delivery price",
+            "charges kitne",
+            "extra charges",
+            "delivery fee"
+          ]
+        },
+        "response": {
+          "script": "Sir/mam, delivery charges delivery location aur store se distance par depend karti hain. Humaari sales team order placement ke time exact delivery charges confirm karegi. Kripya apna location share karein taki hum accurate details de sakein.",
+          "clarification": "Kuch areas mein free delivery bhi available hai minimum order value par.",
+          "follow_up_questions": [
+            "Aap kis area mein delivery chahte hain?",
+            "Kaunsa product order karna chahte hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["delivery_location", "product_selected"],
+          "next_actions": ["calculate_charges", "connect_sales_team"]
+        }
+      },
+      {
+        "id": "wholesale_bulk",
+        "priority": 6,
+        "keywords": {
+          "primary": [
+            "wholesale",
+            "bulk",
+            "bulk order",
+            "large quantity",
+            "zyada quantity",
+            "wholesale price",
+            "bulk discount",
+            "business order",
+            "commercial",
+            "hotel",
+            "office bulk"
+          ],
+          "variations": [
+            "thok",
+            "thok mein",
+            "bahut saara",
+            "quantity mein",
+            "50 piece",
+            "100 piece",
+            "bulk purchase",
+            "project order",
+            "b2b",
+            "dealer",
+            "reseller"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, hum wholesale furniture mein bhi deal karte hain. Kripya batayein aap kaun se products dhundh rahe hain aur kitni quantity chahiye, main sales team se callback arrange karungi. Woh pricing, bulk quantity details, aur availability mein assist karenge.",
+          "benefits": "Bulk orders par special pricing aur dedicated support available hai.",
+          "follow_up_questions": [
+            "Kaunsa product bulk mein chahiye?",
+            "Approximate quantity kitni hai?",
+            "Kya yeh commercial project ke liye hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["product_type", "quantity", "contact_details"],
+          "next_actions": ["escalate_to_sales", "schedule_callback"]
+        }
+      },
+      {
+        "id": "head_branch",
+        "priority": 6,
+        "keywords": {
+          "primary": [
+            "head branch",
+            "main office",
+            "head office",
+            "corporate office",
+            "main branch",
+            "headquarter",
+            "sector 14",
+            "atul kataria"
+          ],
+          "variations": [
+            "sabse bada branch",
+            "main showroom",
+            "head location",
+            "corporate location"
+          ]
+        },
+        "response": {
+          "script": "Humaara head branch Sector 14, Gurugram mein located hai, Atul Kataria Chowk ke paas. Aap wahan visit kar sakte hain complete furniture collections, offers, aur sales team assistance ke liye. Main aapko exact location WhatsApp par share kar sakti hun."
+        }
+      },
+      {
+        "id": "product_specific_sofa",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "sofa",
+            "couch",
+            "sofa set",
+            "3 seater",
+            "2 seater",
+            "l shape",
+            "sectional",
+            "sofa cum bed",
+            "diwan"
+          ],
+          "variations": [
+            "living room sofa",
+            "corner sofa",
+            "recliner sofa",
+            "leather sofa",
+            "fabric sofa",
+            "sofa price",
+            "best sofa"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, humare paas wide variety of sofas available hai. Hum 2-seater, 3-seater, L-shape, sectional, aur sofa cum bed sabkuch deal karte hain. Prices ₹25,000 se start hoti hain aur design, size, aur material par depend karti hain. Kaunsa type aapko chahiye?",
+          "follow_up_questions": [
+            "Kitne seater sofa chahiye?",
+            "Fabric ya leather preference?",
+            "Living room ka size kitna hai?",
+            "Budget range kya hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["seating_capacity", "material_preference", "budget"],
+          "next_actions": ["filter_sofa_products", "share_options"]
+        }
+      },
+      {
+        "id": "product_specific_bed",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "bed",
+            "king size bed",
+            "queen size",
+            "single bed",
+            "double bed",
+            "palang",
+            "bed with storage",
+            "hydraulic bed"
+          ],
+          "variations": [
+            "wooden bed",
+            "upholstered bed",
+            "bed frame",
+            "bedroom furniture",
+            "storage bed",
+            "box bed"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, beds ki wide range available hai. Hum single, queen aur king size beds deal karte hain. Storage options bhi available hain - hydraulic storage, drawer storage, aur pull-out storage. Prices ₹25,000 se start hoti hain. Kaunsa size aur type chahiye?",
+          "follow_up_questions": [
+            "Kis size ka bed chahiye - Single, Queen ya King?",
+            "Storage chahiye ya without storage?",
+            "Material preference - Wooden ya upholstered?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["bed_size", "storage_requirement", "budget"],
+          "next_actions": ["filter_bed_products", "share_options"]
+        }
+      },
+      {
+        "id": "product_specific_dining",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "dining table",
+            "dining set",
+            "khane ki mej",
+            "4 seater dining",
+            "6 seater dining",
+            "dining chair",
+            "dining furniture"
+          ],
+          "variations": [
+            "dining room furniture",
+            "table chair set",
+            "wooden dining",
+            "glass dining",
+            "marble dining"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, dining tables aur dining sets available hain. 4-seater, 6-seater aur 8-seater options hai. Materials mein wooden, glass top, aur marble finish available hai. Prices design aur seating capacity par depend karti hain. Kitne logo ke liye chahiye?",
+          "follow_up_questions": [
+            "Kitne seater dining table chahiye?",
+            "Material preference - Wood, Glass ya Marble?",
+            "Budget range kya hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["seating_capacity", "material_preference", "budget"],
+          "next_actions": ["filter_dining_products", "share_options"]
+        }
+      },
+      {
+        "id": "product_specific_office",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "office furniture",
+            "office chair",
+            "study table",
+            "workstation",
+            "office table",
+            "computer table",
+            "ergonomic chair"
+          ],
+          "variations": [
+            "work from home",
+            "home office",
+            "desk",
+            "office desk",
+            "executive chair",
+            "staff chair",
+            "revolving chair"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, office furniture ki complete range available hai. Office chairs, study tables, workstations, aur storage units sabkuch hai. Work from home setups ke liye bhi perfect options hain. Kya chahiye aapko - chair, table ya complete setup?",
+          "follow_up_questions": [
+            "Home office ke liye ya commercial office?",
+            "Budget kya hai?",
+            "Specific requirements kya hain?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": ["office_type", "furniture_items", "budget"],
+          "next_actions": ["filter_office_products", "share_options"]
+        }
+      },
+      {
+        "id": "warranty_quality",
+        "priority": 5,
+        "keywords": {
+          "primary": [
+            "warranty",
+            "guarantee",
+            "quality",
+            "kharab",
+            "damage",
+            "replacement",
+            "defect",
+            "problem",
+            "issue",
+            "complaint"
+          ],
+          "variations": [
+            "kitne saal warranty",
+            "quality kaisa hai",
+            "strong hai",
+            "durable",
+            "long lasting",
+            "tikau",
+            "warranty period",
+            "guarantee kitna"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, humare sabhi products par warranty available hai. Warranty period product type par depend karta hai. Furniture quality ke liye hum apne manufacturing units mein full quality control maintain karte hain. Manufacturing defects par replacement bhi available hai. Kaunse product ke liye warranty details chahiye?",
+          "follow_up_questions": [
+            "Kis product ke baare mein puchh rahe hain?",
+            "Koi specific concern hai?"
+          ]
+        }
+      },
+      {
+        "id": "payment_methods",
+        "priority": 5,
+        "keywords": {
+          "primary": [
+            "payment",
+            "pay kaise",
+            "payment option",
+            "emi",
+            "installment",
+            "card",
+            "cash",
+            "online payment",
+            "upi"
+          ],
+          "variations": [
+            "paisa kaise de",
+            "payment method",
+            "emi available",
+            "finance",
+            "loan",
+            "credit card",
+            "debit card",
+            "paytm",
+            "phonepe",
+            "gpay"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, multiple payment options available hain. Cash, Card, UPI, aur Online transfer sab accept karte hain. EMI options bhi available hain selected banks ke saath. Store par payment ke time humaari team aapko sab options explain karegi.",
+          "follow_up_questions": [
+            "Aap EMI option mein interested hain?",
+            "Kaunsa payment method prefer karenge?"
+          ]
+        }
+      },
+      {
+        "id": "customization",
+        "priority": 6,
+        "keywords": {
+          "primary": [
+            "customize",
+            "customization",
+            "apne hisaab se",
+            "custom made",
+            "design change",
+            "modification",
+            "alter",
+            "change color",
+            "size change"
+          ],
+          "variations": [
+            "apni pasand ka",
+            "customize kar sakte",
+            "design badal sakte",
+            "size adjust",
+            "color change",
+            "fabric change",
+            "made to order"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, customization options available hain. Aap size, color, fabric aur kuch design elements customize kar sakte hain. Yeh product type par depend karta hai. Humaari sales team aapko customization options aur additional charges ke baare mein detail se batayegi. Store visit karein ya callback schedule karein.",
+          "follow_up_questions": [
+            "Kis product mein customization chahiye?",
+            "Kya specific changes chahiye?"
+          ]
+        }
+      },
+      {
+        "id": "installation_assembly",
+        "priority": 5,
+        "keywords": {
+          "primary": [
+            "installation",
+            "assembly",
+            "fitting",
+            "lagana",
+            "install karna",
+            "setup",
+            "carpenter",
+            "lagwaoge",
+            "assembly service"
+          ],
+          "variations": [
+            "ghar pe lagaoge",
+            "fitting service",
+            "assemble karega kaun",
+            "installation charges",
+            "setup help",
+            "carpenter aayega"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, installation aur assembly service available hai. Humaari trained team aapke ghar aakar furniture properly install karegi. Yeh service delivery ke saath include hoti hai ya separately available hai product type par depend karke. Details sales team confirm karegi.",
+          "follow_up_questions": [
+            "Kis product ka installation chahiye?",
+            "Kab installation karvana hai?"
+          ]
+        }
+      },
+      {
+        "id": "timing_hours",
+        "priority": 4,
+        "keywords": {
+          "primary": [
+            "timing",
+            "time",
+            "open",
+            "close",
+            "kab khulta",
+            "kab band",
+            "working hours",
+            "store timing",
+            "showroom timing"
+          ],
+          "variations": [
+            "kab khula rahega",
+            "kab aayein",
+            "visit ka time",
+            "opening time",
+            "closing time",
+            "sunday open",
+            "holiday"
+          ]
+        },
+        "response": {
+          "script": "Humare stores Monday se Sunday subah 10 baje se raat 8 baje tak khule rahte hain. Koi bhi din aap visit kar sakte hain. Specific store ke timing confirm karne ke liye store location bataiye.",
+          "follow_up_questions": [
+            "Kis store ke timing chahiye?",
+            "Kab visit karna chahte hain?"
+          ]
+        }
+      }
+    ],
+    "fallback_responses": {
+      "no_match": "Main aapki baat samajh rahi hun. Kya aap thoda aur detail mein bata sakte hain taki main behtar sahayata kar sakun?",
+      "low_confidence": "Main ensure karna chahti hun ki main sahi information dun. Kya aap apna question thoda aur clear kar sakte hain?",
+      "multiple_intents": "Main dekh rahi hun aap kuch topics ke baare mein puchh rahe hain. Kya main ek ek karke sabka answer dun?",
+      "need_human": "Main aapki query ke liye humare specialist se connect kar rahi hun. Kripya kuch seconds wait karein."
+    },
+    "conversation_starters": {
+      "greeting_responses": [
+        "Namaskar! Krishna Furniture mein aapka swagat hai. Main aapki kis prakaar se sahayata kar sakti hun?",
+        "Hello! Krishna Furniture ke liye aapko kaise madad kar sakti hun?",
+        "Namaste! Aaj aapko kaunsa furniture chahiye?"
+      ],
+      "after_hours": "Namaskar! Abhi humara store close hai. Kal 10 baje se 8 baje tak khula rahega. Kya main aapki kuch information le sakti hun taki kal humaari team callback kar sake?"
+    }
+  }
+}

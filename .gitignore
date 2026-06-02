@@ -1,0 +1,12 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+tts-cache/
+logs/
+*.wav
+*.log
+.env
+__pycache__/

@@ -1,0 +1,20 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+  node_ip: 62.238.16.130
+
+keys:
+  059eb404ea3a3f9c1bf5bdddad5bb962: ef6e6d85c2446b14ecb03b9c094d522724a208bef76caa7526c128c37ad4c61f
+
+logging:
+  json: false
+  level: info
+
+redis:
+  address: localhost:6379
+
+
+

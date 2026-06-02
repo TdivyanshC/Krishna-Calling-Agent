@@ -1,0 +1,10 @@
+log_level: info
+api_key: 059eb404ea3a3f9c1bf5bdddad5bb962
+api_secret: ef6e6d85c2446b14ecb03b9c094d522724a208bef76caa7526c128c37ad4c61f
+ws_url: ws://localhost:7880
+redis:
+  address: localhost:6379
+sip_port: 5060
+rtp_port: 10000-20000
+use_external_ip: false
+node_ip: 62.238.16.130
