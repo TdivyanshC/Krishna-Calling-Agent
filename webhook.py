@@ -502,7 +502,7 @@ async def transcribe(wav_bytes: bytes) -> str:
                 headers={"API-Subscription-Key": SARVAM_API_KEY},
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
                 data={
-                    "model": "saaras:v3",
+                    "model": "saarika:v2.5",
                     "language_code": "hi-IN",
                     "with_timestamps": "false",
                     "with_disfluencies": "false",
@@ -642,16 +642,24 @@ def extract_product(text: str) -> str | None:
 
 def extract_budget(text: str) -> str | None:
     tl = text.lower()
+    # Range: '60 se 70 hazaar', '1 se 2 lakh', '60 से 70 हजार' — take higher bound
+    range_m = re.search(
+        r'(\d[\d,]*)\s*(?:se|to|से|-)\s*(\d[\d,]*)\s*'
+        r'(hazaar|hazar|हज़ार|हजार|lakh|लाख|k\b|thousand)?', tl)
+    if range_m:
+        num = range_m.group(2).replace(",","")
+        unit = range_m.group(3) or ""
+        if unit in ("hazaar","hazar","हज़ार","हजार","k","thousand"): return f"₹{num},000"
+        elif unit in ("lakh","लाख"): return f"₹{num},00,000"
+        elif len(num) >= 4: return f"₹{num}"
+    # Single number
     m = re.search(r'(\d[\d,]*)\s*(hazaar|hazar|हज़ार|हजार|lakh|लाख|k\b|thousand)?', tl)
     if m:
         num = m.group(1).replace(",","")
         unit = m.group(2) or ""
-        if unit in ("hazaar","hazar","हज़ार","हजार","k","thousand"):
-            return f"₹{num},000"
-        elif unit in ("lakh","लाख"):
-            return f"₹{num},00,000"
-        elif len(num) >= 4:
-            return f"₹{num}"
+        if unit in ("hazaar","hazar","हज़ार","हजार","k","thousand"): return f"₹{num},000"
+        elif unit in ("lakh","लाख"): return f"₹{num},00,000"
+        elif len(num) >= 4: return f"₹{num}"
     for kw in BUDGET_KEYWORDS:
         if kw in tl and kw not in {"kitna","rate","price","budget","बजट","कितने"}:
             return tl.strip()
@@ -680,18 +688,68 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
         return reply, source
 
     if state == "QUALIFY_PRODUCT":
+        # If customer is just saying ack words (हाँ जी, हेलो) and we haven't asked product yet
+        # proactively ask instead of staying silent
+        tl_ack_check = text_fixed.lower().strip(".,!? ।")
+        pure_greeting = tl_ack_check in {
+            "हेलो","hello","हाँ","हां","जी","हाँ जी","हां जी","बोलिए",
+            "हाँ बोलिए","हाँ जी बोलिए","ji","haan","han","ha","hello","hi"
+        }
+        if pure_greeting and session.turn_count <= 3:
+            reply = "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब, या कुछ और?"
+            session.conversation.append(("user", text_raw))
+            session.conversation.append(("assistant", reply))
+            return reply, "ask_product"
+        # Early negative on outbound — customer says not interested before giving product
+        tl_early = text_fixed.lower()
+        early_exit = {"nahi chahiye","not interested","zaroorat nahi","mat karo","band karo",
+                      "नहीं चाहिए","ज़रूरत नहीं","मत करो","बंद करो","no thanks","nope"}
+        if any(s in tl_early for s in early_exit):
+            already = getattr(session, "early_recovery_tried", False)
+            if not already:
+                session.early_recovery_tried = True
+                reply = "जी समझ गई, कोई बात नहीं। बस एक बात — हम pan-India delivery करते हैं और installation भी free है। WhatsApp पर कुछ options भेज दूँ बस एक बार देखने के लिए?"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "hook_negative_1"
+            else:
+                session.state = "DONE"
+                reply = "बिल्कुल, आपका समय लेने के लिए माफ़ी। जब भी ज़रूरत हो — Krishna Furniture हमेशा यहाँ है। आपका दिन शुभ हो!"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "hook_negative_2"
         product = extract_product(text_fixed) or extract_product(text_raw)
         if product:
             session.lead["product"] = product
             session.slots["product"] = product
             session.state = "QUALIFY_BUDGET"
             logger.info(f"[{call_uuid}] LEAD product={product}")
-            reply = f"बढ़िया! {product.title()} के लिए आपका budget range क्या है?"
+            # Set ack — specific for single product, generic for multiple
+            _ack_map = {"sofa":"ack_sofa","bed":"ack_bed","dining":"ack_dining",
+                        "wardrobe":"ack_wardrobe","office":"ack_office",
+                        "chair":"ack_office","almirah":"ack_wardrobe",
+                        "table":"ack_dining","mattress":"ack_bed"}
+            _tl = text_fixed.lower()
+            _multi = sum(1 for p in ["sofa","bed","dining","wardrobe","office",
+                         "सोफा","बेड","डाइनिंग","वार्डरोब"] if p in _tl)
+            session.pending_ack = "ack_general" if _multi > 1 else _ack_map.get(product, "ack_general")
+            reply = "Budget में roughly कितना सोच रहे हैं — कोई idea हो तो बताइए?"
+            session.conversation.append(("user", text_raw))
+            session.conversation.append(("assistant", reply))
+            return reply, "qualify_budget"
         else:
-            reply = "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब?"
-        session.conversation.append(("user", text_raw))
-        session.conversation.append(("assistant", reply))
-        return reply, "qualify_budget" if product else "ask_product"
+            # Product not understood — clarify warmly then re-ask
+            already_asked = getattr(session, "product_ask_count", 0)
+            session.product_ask_count = already_asked + 1
+            if already_asked >= 1:
+                reply = "माफ़ करना, समझ नहीं पाई — sofa, bed, dining, wardrobe, कौन सा देखना है?"
+                source = "not_understood"
+            else:
+                reply = "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब, या कुछ और?"
+                source = "ask_product"
+            session.conversation.append(("user", text_raw))
+            session.conversation.append(("assistant", reply))
+            return reply, source
 
     elif state == "QUALIFY_BUDGET":
         product = extract_product(text_fixed) or extract_product(text_raw)
@@ -704,8 +762,17 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             session.slots["budget"] = budget.strip(".,!? ।")
             session.state = "QUALIFY_URGENCY"
             logger.info(f"[{call_uuid}] LEAD budget={budget}")
-            reply = "समझ गई! और कब तक चाहिए — कोई specific timeline है?"
+            reply = "और कब तक चाहिए — कोई जल्दी है, या अभी देख रहे हैं बस?"
         else:
+            # Vague answer like "लगभग", "roughly" — apologise then re-ask
+            vague_words = {"लगभग","lagbhag","roughly","almost","करीब","तकरीबन","शायद","pata nahi","nahi pata","hmm","hm","umm","uhh"}
+            tl_check = text_fixed.lower().strip(".,!? ।")
+            if any(v in tl_check for v in vague_words) or len(tl_check.split()) <= 1:
+                reply = "माफ़ करना, ठीक से समझ नहीं पाई — budget roughly कितना सोच रहे हैं?"
+                source = "not_understood_budget"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, source
             reply = "Budget rough idea भी चलेगा — जैसे ₹२०,००० से ₹५०,००० या इससे ऊपर?"
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply))
@@ -718,45 +785,84 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
         session.state = "WRAP_UP"
         logger.info(f"[{call_uuid}] LEAD urgency={urgency} | LEAD COMPLETE: {session.lead}")
         product_raw = session.lead.get("product", "furniture")
-        budget      = session.lead.get("budget", "आपके budget में")
-        hindi_products = {
-            "sofa":"सोफा", "bed":"बेड", "chair":"कुर्सी",
-            "dining":"डाइनिंग सेट", "table":"टेबल",
-            "wardrobe":"वार्डरोब", "almirah":"अलमारी",
-            "office":"ऑफिस फर्नीचर", "curtain":"पर्दे",
-            "mattress":"गद्दे", "furniture":"फर्नीचर",
+        wrap_key_map = {
+            "sofa":     "wrap_up_sofa",
+            "bed":      "wrap_up_bed",
+            "dining":   "wrap_up_dining",
+            "office":   "wrap_up_office",
+            "chair":    "wrap_up_office",
+            "wardrobe": "wrap_up_general",
+            "almirah":  "wrap_up_general",
+            "table":    "wrap_up_dining",
+            "curtain":  "wrap_up_general",
+            "mattress": "wrap_up_bed",
         }
-        product = hindi_products.get(product_raw, product_raw)
-        reply = (
-            f"बिल्कुल! मैं आपको {product} के कुछ options "
-            f"{budget} range में WhatsApp पर भेज रही हूँ। "
-            f"कोई और सवाल है?"
-        )
+        wrap_key = wrap_key_map.get(product_raw, "wrap_up_general")
+        from tts_engine import STATIC_RESPONSES
+        lang = getattr(session, "lang", "hi")
+        reply = STATIC_RESPONSES.get(wrap_key, {}).get(lang) or STATIC_RESPONSES.get(wrap_key, {}).get("hi", "बिल्कुल! WhatsApp पर options भेज रही हूँ।")
+        logger.info(f"[{call_uuid}] WRAP_UP key={wrap_key} lang={lang}")
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply))
-        return reply, "wrap_up"
+        return reply, wrap_key
 
     elif state == "WRAP_UP":
         tl = text_fixed.lower()
-        goodbye_signals = {"nahi","no","nope","theek","shukriya","thanks","bye",
-                          "नहीं","ठीक है","शुक्रिया","बस","bas","rehne do"}
-        if any(g in tl for g in goodbye_signals) or len(tl.split()) <= 2:
-            session.state = "DONE"
-            reply = "बहुत बहुत शुक्रिया आपका! आपका दिन शुभ हो। 😊"
-        else:
-            session.faq_mode = True
+
+        # ── Objection: expensive / online cheaper ──────────────────────────
+        expensive_signals = {"mehnga","costly","expensive","sasta","online","amazon","flipkart",
+                             "महंगा","सस्ता","ऑनलाइन","कम budget","budget nahi"}
+        if any(s in tl for s in expensive_signals):
             session.state = "FAQ_MODE"
-            kb_reply, kb_source = kb_response(text_fixed, session)
-            if kb_reply:
-                reply = kb_reply
-                source = kb_source
+            session.faq_mode = True
+            reply = "सर, online में जो दिखता है वो quality और जो मिलता है वो quality — दोनों अलग होती हैं। हमारे अपने manufacturing plants हैं, आपको सीधे factory price देते हैं। Photos देखिए एक बार, फिर compare कीजिए खुद।"
+            session.conversation.append(("user", text_raw))
+            session.conversation.append(("assistant", reply))
+            return reply, "obj_online_wrapup"
+
+        # ── Objection: need to think / not sure ───────────────────────────
+        think_signals = {"sochna","sochu","soch","think","zaroorat nahi","baad mein",
+                         "sochenge","dekhenge","pata nahi","확인","सोचना","बाद में","ज़रूरत नहीं","देखेंगे"}
+        if any(s in tl for s in think_signals):
+            session.state = "FAQ_MODE"
+            session.faq_mode = True
+            reply = "बिल्कुल सोचिए! बस एक बात — यह sale महीने के अंत तक ही है और कुछ designs की limited pieces बची हैं। WhatsApp पर photos देख लीजिए, फिर decide करिए — कोई pressure नहीं!"
+            session.conversation.append(("user", text_raw))
+            session.conversation.append(("assistant", reply))
+            return reply, "obj_think_wrapup"
+
+        # ── Goodbye signals: first attempt → try recovery ─────────────────
+        goodbye_signals = {"nahi","no","nope","shukriya","thanks","bye","band karo",
+                          "नहीं","शुक्रिया","बस","bas","rehne do","theek hai","enough"}
+        hard_exit = getattr(session, "recovery_tried", False)
+        if any(g in tl for g in goodbye_signals) or len(tl.split()) <= 2:
+            if not hard_exit:
+                # First no → soft recovery
+                session.recovery_tried = True
+                reply = "जी समझ गई! बस WhatsApp पर कुछ options भेज देती हूँ — कभी भी देखिएगा, कोई pressure नहीं। और कोई सवाल हो तो बेझिझक पूछिए!"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "obj_busy"
             else:
-                reply, source = llm_reply(text_fixed, session, call_uuid)
-                source = source or "llm"
+                # Second no → warm exit
+                session.state = "DONE"
+                reply = "बहुत बहुत शुक्रिया! आपसे बात करके अच्छा लगा। जब भी ज़रूरत हो — Krishna Furniture हमेशा यहाँ है। आपका दिन शानदार हो!"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "goodbye_warm"
+
+        # ── Positive / question → FAQ mode ────────────────────────────────
+        session.faq_mode = True
+        session.state = "FAQ_MODE"
+        kb_reply, kb_source = kb_response(text_fixed, session)
+        if kb_reply:
+            reply = kb_reply
+            source = kb_source
+        else:
+            reply, source = llm_reply(text_fixed, session, call_uuid)
+            source = source or "llm"
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply or ""))
-        if session.state == "DONE":
-            return reply, "goodbye"
         return reply, source
 
     return None, "done"

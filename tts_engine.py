@@ -39,7 +39,7 @@ DYNAMIC_DIR     = CACHE_DIR / "dynamic"
 FILLER_DIR      = CACHE_DIR / "fillers"
 
 TTS_TIMEOUT     = 20  # seconds
-TTS_PACE        = 1.05
+TTS_PACE        = 1.00
 TTS_SAMPLE_RATE = 8000
 TTS_MODEL       = "bulbul:v3"
 
@@ -63,9 +63,9 @@ STATIC_RESPONSES = {
         "en":       "Welcome to Krishna Furniture, this is Priya speaking — how can I help you today?",
     },
     "greeting_outbound": {
-        "hinglish": "Namaskar, main Priya hoon Krishna Furniture se — abhi 2 minute baat kar sakte hain?",
-        "hi":       "नमस्कार, मैं प्रिया हूँ कृष्णा फर्नीचर से — अभी 2 मिनट बात कर सकते हैं?",
-        "en":       "Hello, this is Priya from Krishna Furniture — is this a good time to talk?",
+        "hinglish": "Namaskar! Main Priya baat kar rahi hoon Krishna Furniture se — aapne hamare furniture mein interest dikhaya tha, toh personally connect karna chahti thi. Ek minute hai aapke paas?",
+        "hi":       "नमस्ते! मैं प्रिया बात कर रही हूँ Krishna Furniture से — आपने हमारे furniture में interest दिखाया था, तो personally connect करना चाहती थी। एक मिनट है आपके पास?",
+        "en":       "Hello! This is Priya from Krishna Furniture — you had shown interest in our furniture, so I wanted to personally connect. Do you have just a minute?",
     },
 
     # ── Qualification questions ────────────────────────────────────────────────
@@ -75,14 +75,14 @@ STATIC_RESPONSES = {
         "en":       "What are you looking for — sofa, bed, wardrobe, or something else?",
     },
     "qualify_budget": {
-        "hinglish": "Budget roughly kitna hai aapka?",
-        "hi":       "आपका बजट लगभग कितना है?",
-        "en":       "What's your approximate budget?",
+        "hinglish": "Budget roughly kitna soch rahe hain — koi idea ho toh batao?",
+        "hi":       "Budget में roughly कितना सोच रहे हैं — कोई idea हो तो बताइए?",
+        "en":       "What's your rough budget in mind — any idea?",
     },
     "qualify_urgency": {
-        "hinglish": "Kab tak chahiye aapko?",
-        "hi":       "आपको कब तक चाहिए?",
-        "en":       "When do you need it by?",
+        "hinglish": "Aur kab tak chahiye — koi jaldi hai ya time hai?",
+        "hi":       "और कब तक चाहिए — कोई जल्दी है, या अभी देख रहे हैं बस?",
+        "en":       "And when do you need it — is there a rush or just browsing for now?",
     },
     "wrap_whatsapp": {
         "hinglish": "Bilkul ji, main aapko WhatsApp pe options bhej rahi hoon. Koi aur sawaal?",
@@ -93,6 +93,82 @@ STATIC_RESPONSES = {
         "hinglish": "Bahut shukriya aapka. Krishna Furniture ki taraf se aapka din shubh ho!",
         "hi":       "बहुत शुक्रिया आपका। कृष्णा फर्नीचर की तरफ से आपका दिन शुभ हो!",
         "en":       "Thank you so much for calling. Have a wonderful day from all of us at Krishna Furniture!",
+    },
+
+    # ── Outbound response handlers ────────────────────────────────────────────
+    "hook_positive": {
+        "hi": "बहुत अच्छा! देखिए, इस महीने हमारे store में 35% तक की छूट चल रही है — और कुछ बेहतरीन नया collection भी आया है। आप किस तरह का furniture देख रहे हैं — sofa, bed, dining, या कुछ और?",
+        "hinglish": "Bahut achha! Is mahine hamare store mein 35% tak ki choot chal rahi hai — aur kuch behtareen naya collection bhi aaya hai. Aap kis tarah ka furniture dekh rahe hain?",
+        "en": "Great! We have up to 35% off this month and some stunning new arrivals too. What kind of furniture are you looking for — sofa, bed, dining, or something else?",
+    },
+    "hook_hesitant": {
+        "hi": "जी माफ़ी चाहती हूँ अगर समय गलत हो — बस इसलिए call किया क्योंकि इस महीने special sale है और आपको personally बताना चाहती थी। बस 30 सेकंड — कौन सा furniture देख रहे थे आप?",
+        "hinglish": "Ji maafi chahti hoon agar samay galat ho — bas isliye call kiya kyunki is mahine special sale hai. Bas 30 second — kaun sa furniture dekh rahe the aap?",
+        "en": "I'm sorry if this is a bad time — I called because we have a special sale this month and I wanted to personally let you know. Just 30 seconds — what furniture were you looking for?",
+    },
+    "hook_negative_1": {
+        "hi": "जी समझ गई, कोई बात नहीं। बस एक बात — अगर कभी भी घर के लिए furniture का ख़याल आए, हम pan-India delivery करते हैं और installation भी free है। WhatsApp पर कुछ options भेज दूँ बस एक बार देखने के लिए?",
+        "hinglish": "Ji samajh gayi, koi baat nahi. Bas ek baat — agar kabhi bhi furniture ka khayal aaye, hum pan-India delivery karte hain aur installation bhi free hai. WhatsApp pe kuch options bhej doon?",
+        "en": "I understand, no problem at all. Just one thing — whenever you think of furniture, we offer pan-India delivery and free installation. Can I send you some options on WhatsApp, just to browse?",
+    },
+    "hook_negative_2": {
+        "hi": "बिल्कुल, आपका समय लेने के लिए माफ़ी। जब भी ज़रूरत हो — Krishna Furniture हमेशा यहाँ है। आपका दिन शुभ हो!",
+        "hinglish": "Bilkul, aapka samay lene ke liye maafi. Jab bhi zaroorat ho — Krishna Furniture hamesha yahan hai. Aapka din shubh ho!",
+        "en": "Of course, I'm sorry for taking your time. Whenever you need us — Krishna Furniture is always here. Have a wonderful day!",
+    },
+    "product_vague": {
+        "hi": "बिल्कुल! एक काम करते हैं — मैं आपको WhatsApp पर हमारे सबसे popular options भेज देती हूँ, अपने हिसाब से देख लीजिए। नंबर यही है ना आपका?",
+        "hinglish": "Bilkul! Ek kaam karte hain — main aapko WhatsApp pe hamare sabse popular options bhej deti hoon. Number yahi hai na aapka?",
+        "en": "Of course! Let me send you our most popular options on WhatsApp — browse at your own time. This is your number, right?",
+    },
+    "product_busy": {
+        "hi": "जी ज़रूर, आपका time waste नहीं करूँगी। WhatsApp पर थोड़ी देर में options भेजती हूँ — एक बार ज़रूर देखिएगा!",
+        "hinglish": "Ji zaroor, aapka time waste nahi karungi. WhatsApp pe thodi der mein options bhejti hoon — ek baar zaroor dekhiyega!",
+        "en": "Of course, I won't take your time. I'll send options on WhatsApp shortly — do take a look when you can!",
+    },
+
+    # ── Pre-cached wrap-up variants per product ────────────────────────────
+    "wrap_up_dining": {
+        "hi": "बिल्कुल! Dining set के कुछ बेहतरीन options अभी WhatsApp पर भेज रही हूँ — 6 seater से लेकर 8 seater तक, solid wood भी और premium लेमिनेट भी, आपके budget में perfect choices हैं। थोड़ी देर में message आएगा — एक बार ज़रूर देखिएगा!",
+        "hinglish": "Bilkul! Dining set ke kuch behtareen options abhi WhatsApp pe bhej rahi hoon — 6 seater se lekar 8 seater tak, solid wood bhi aur premium laminate bhi. Thodi der mein message aayega!",
+        "en": "Perfect! I'm sending you our best dining set options on WhatsApp right now — from 6 seater to 8 seater, solid wood and premium laminate, all within your budget. Message coming shortly!",
+    },
+    "wrap_up_sofa": {
+        "hi": "बिल्कुल! Sofa के options अभी WhatsApp पर भेज रही हूँ — L-shape, 5 seater, recliner — fabric और leather दोनों में। थोड़ी देर में आएगा, एक बार देखिएगा!",
+        "hinglish": "Bilkul! Sofa ke options abhi WhatsApp pe bhej rahi hoon — L-shape, 5 seater, recliner — fabric aur leather dono mein. Thodi der mein aayega!",
+        "en": "Perfect! Sending sofa options on WhatsApp now — L-shape, 5 seater, recliner — available in both fabric and leather. Coming shortly!",
+    },
+    "wrap_up_bed": {
+        "hi": "बिल्कुल! Bed के options अभी भेज रही हूँ — king size, queen size, hydraulic storage beds — सब आपके budget में perfect हैं। थोड़ी देर में WhatsApp पर आएगा!",
+        "hinglish": "Bilkul! Bed ke options abhi bhej rahi hoon — king size, queen size, hydraulic storage beds — sab aapke budget mein. Thodi der mein WhatsApp pe aayega!",
+        "en": "Perfect! Sending bed options now — king size, queen size, hydraulic storage beds — all within your budget. Coming to WhatsApp shortly!",
+    },
+    "wrap_up_office": {
+        "hi": "बिल्कुल! Office furniture के options अभी WhatsApp पर भेज रही हूँ — ergonomic chairs, executive desks, workstations — सब ready है। थोड़ी देर में मिलेगा!",
+        "hinglish": "Bilkul! Office furniture ke options abhi WhatsApp pe bhej rahi hoon — ergonomic chairs, executive desks, workstations. Thodi der mein milega!",
+        "en": "Perfect! Sending office furniture options now — ergonomic chairs, executive desks, workstations — all ready. Coming shortly!",
+    },
+    "wrap_up_general": {
+        "hi": "बिल्कुल! मैं अभी आपको WhatsApp पर हमारे best options भेज रही हूँ — एक बार ज़रूर देखिएगा, आपको कुछ न कुछ पसंद ज़रूर आएगा!",
+        "hinglish": "Bilkul! Main abhi aapko WhatsApp pe hamare best options bhej rahi hoon. Ek baar zaroor dekhiyega!",
+        "en": "Perfect! I'm sending you our best options on WhatsApp right now — do take a look, I'm sure something will catch your eye!",
+    },
+
+    # ── Post wrap-up objection handlers ───────────────────────────────────
+    "obj_think_wrapup": {
+        "hi": "बिल्कुल सोचिए! बस एक बात — यह sale महीने के अंत तक ही है और कुछ designs की limited pieces बची हैं। WhatsApp पर photos देख लीजिए, फिर decide करिए — कोई pressure नहीं!",
+        "hinglish": "Bilkul sochiye! Bas ek baat — yeh sale mahine ke ant tak hi hai aur kuch designs ki limited pieces bachi hain. WhatsApp pe photos dekh lijiye, phir decide kariye — koi pressure nahi!",
+        "en": "Of course, take your time! Just one thing — this sale ends at month's end and some designs have limited stock left. Check the WhatsApp photos, then decide — no pressure at all!",
+    },
+    "obj_online_wrapup": {
+        "hi": "सर, online में जो दिखता है वो quality और जो मिलता है वो quality — दोनों अलग होती हैं। हमारे अपने manufacturing plants हैं, बीच का profit हम नहीं लेते — आपको सीधे factory price देते हैं। एक बार photos देखिए, फिर compare कीजिए खुद।",
+        "hinglish": "Sir, online mein jo dikhta hai woh quality aur jo milta hai woh quality — dono alag hoti hain. Hamare apne manufacturing plants hain — aapko seedha factory price dete hain. Ek baar photos dekhiye phir compare kariye.",
+        "en": "Sir, what you see online and what you receive are often very different qualities. We have our own manufacturing plants — you get factory-direct pricing. Check the photos once and compare yourself.",
+    },
+    "goodbye_warm": {
+        "hi": "बहुत बहुत शुक्रिया! आपसे बात करके अच्छा लगा। अगर कोई भी सवाल हो तो बेझिझक call या WhatsApp कीजिए — Krishna Furniture हमेशा ready है। आपका दिन शानदार हो!",
+        "hinglish": "Bahut bahut shukriya! Aapse baat karke achha laga. Agar koi bhi sawaal ho toh behjhijak call ya WhatsApp kariye — Krishna Furniture hamesha ready hai. Aapka din shandar ho!",
+        "en": "Thank you so much! It was lovely talking to you. If you ever have any questions, call or WhatsApp anytime — Krishna Furniture is always here for you. Have a fantastic day!",
     },
 
     # ── Objections ─────────────────────────────────────────────────────────────
@@ -213,6 +289,55 @@ STATIC_RESPONSES = {
         "hinglish": "Maafi chahti hoon, thoda clear nahi hua. Kya aap dobara bol sakte hain?",
         "hi":       "माफी चाहती हूँ, थोड़ा clear नहीं हुआ। क्या आप दोबारा बोल सकते हैं?",
         "en":       "I'm sorry, I didn't quite catch that. Could you say that again?",
+    },
+
+    # ── Product acknowledgements (plays before budget question) ────────────
+    "ack_sofa": {
+        "hi":       "अच्छा, sofa देखना है!",
+        "hinglish": "Achha, sofa dekhna hai!",
+        "en":       "Got it, sofa!",
+    },
+    "ack_bed": {
+        "hi":       "अच्छा, bed देखना है!",
+        "hinglish": "Achha, bed dekhna hai!",
+        "en":       "Got it, bed!",
+    },
+    "ack_dining": {
+        "hi":       "अच्छा, dining set देखना है!",
+        "hinglish": "Achha, dining set dekhna hai!",
+        "en":       "Got it, dining set!",
+    },
+    "ack_wardrobe": {
+        "hi":       "अच्छा, wardrobe देखनी है!",
+        "hinglish": "Achha, wardrobe dekhni hai!",
+        "en":       "Got it, wardrobe!",
+    },
+    "ack_office": {
+        "hi":       "अच्छा, office furniture देखना है!",
+        "hinglish": "Achha, office furniture dekhna hai!",
+        "en":       "Got it, office furniture!",
+    },
+    "ack_general": {
+        "hi":       "जी समझ गई!",
+        "hinglish": "Ji samajh gayi!",
+        "en":       "Got it!",
+    },
+    "ack_budget": {
+        "hi":       "समझ गई!",
+        "hinglish": "Samajh gayi!",
+        "en":       "Got it!",
+    },
+
+    # ── Misunderstanding handlers ──────────────────────────────────────────
+    "not_understood_budget": {
+        "hi":       "माफ़ करना, समझ नहीं पाई — budget roughly कितना सोच रहे हैं?",
+        "hinglish": "Maaf karna, samajh nahi paai — budget roughly kitna soch rahe hain?",
+        "en":       "Sorry, I didn't catch that — what's your rough budget?",
+    },
+    "not_understood_urgency": {
+        "hi":       "माफ़ करना, समझ नहीं पाई — कब तक चाहिए roughly?",
+        "hinglish": "Maaf karna, samajh nahi paai — kab tak chahiye roughly?",
+        "en":       "Sorry, I didn't catch that — when do you need it?",
     },
 }
 

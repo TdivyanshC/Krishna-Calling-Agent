@@ -58,6 +58,8 @@ STT_FIXES = {
     "चेयर":   "chair",
     "चेहरे":  "chair",
     "सोफ़ा":   "sofa",
+    "तोफा":   "sofa",
+    "तोफ़ा":  "sofa",
     "सोफा":   "sofa",
     "बेड":    "bed",
     "पलंग":   "bed",
@@ -89,6 +91,7 @@ STT_FIXES = {
 JUNK_WORDS = {
     # Audio artifacts
     "um","uh","ah","err","hmm","beep","bip","ding","wena",
+    "excuse me","yuz mi","yuse me","sorry","pardon",
     # Whisper hallucinations on phone noise
     "kirsten","obirah","frozen","leonard","partner","walter",
     "thanks","thank","bye","goodbye","music","silence",
@@ -103,9 +106,14 @@ ACK_WORDS = {
     "haan","han","ha","ji","okay","ok","achha","acha","theek","bilkul",
     "zaroor","sahi","got it","alright","samjha","samjhi","understood",
     "haan ji","ok ji","theek hai","ji haan","yes","yep","yup",
+    "ok thank you","okay thank you","thanks bye","ok thanks","thank you",
     # Devanagari (Saaras output)
     "हाँ","हाँ जी","हां","हां जी","जी","ठीक है","बिल्कुल","ज़रूर",
     "अच्छा","ओके","यस","हाँ जी।","जी।","यस।","ओके।","ठीक।",
+    "हाँ जी बोलिए","हाँ बोलिए","हाँ जी बोलिए।","हाँ बोलिए।",
+    "बोलिए","बोलिए।","जी बोलिए","जी बोलिए।","हाँ जी बताइए",
+    "ओके, थैंक यू।","ओके थैंक यू","थैंक यू।","थैंक्स।","शुक्रिया।",
+    "बहुत शुक्रिया।","धन्यवाद।","ठीक है जी।","अच्छा जी।",
 }
 
 def fix_stt(text: str) -> str:
@@ -131,7 +139,8 @@ def is_noise(text: str) -> bool:
     if len(real) == 1:
         w = real[0]
         # Short Devanagari fillers alone = incomplete utterance
-        devanagari_fillers = {"मुझे","मैं","आप","वो","यह","इसे","उसे","क्या","कोई","एक","मेरे","मेरा"}
+        devanagari_fillers = {"मुझे","मैं","आप","वो","यह","इसे","उसे","क्या","कोई","एक","मेरे","मेरा",
+                                  "करीब","तकरीबन"}
         if w in devanagari_fillers:
             return True
         # Single English name/hallucination = noise

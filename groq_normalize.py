@@ -20,7 +20,7 @@ product="{product or ''}" budget="{budget_raw or ''}" urgency="{urgency_raw or '
 
 urgency examples: "दो से तीन दिन में"→"In 2-3 days", "कल"→"Tomorrow", "अगले हफ्ते"→"Next week", "इसी हफ्ते"→"This week", "म्हणजे"→"Not specified"
 budget: single "₹25,000" or range "₹70,000 - ₹90,000"
-budget_numeric: higher bound integer or null
+budget_numeric: if range given take the HIGHER bound as integer (e.g. "1 se 2 lakh" = 200000, "ek lakh" = 100000, "50 hazaar" = 50000), or null only if completely unclear
 
 {{"product":"...","budget":"...","urgency":"...","budget_numeric":0}}"""
 

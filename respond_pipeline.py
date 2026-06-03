@@ -187,6 +187,21 @@ async def respond_v2(ws, session, audio: bytes, call_uuid: str, play_fn=None) ->
         from webhook import state_machine  # your existing function
         reply, source = state_machine(text_fixed, text, session, call_uuid)
 
+        # Play pending acknowledgement (e.g. "अच्छा bed देखना है!") before main response
+        pending_ack = getattr(session, "pending_ack", None)
+        if pending_ack and reply:
+            session.pending_ack = None
+            from tts_engine import STATIC_RESPONSES
+            ack_text = STATIC_RESPONSES.get(pending_ack, {}).get(lang)
+            if ack_text:
+                ack_key = pending_ack
+                ack_wav = get_static_audio(ack_key, lang)
+                if ack_wav:
+                    ack_url = f"{BASE_URL}/audio/static/{ack_key}_{lang}.wav"
+                    await play_fn(call_uuid, ack_url)
+                    logger.info(f"[{call_uuid}] ACK played → {ack_key}")
+                    await asyncio.sleep(0.8)
+
         if not reply:
             return
 
@@ -262,6 +277,18 @@ def _source_to_static_key(source: str, lang: str) -> Optional[str]:
         "goodbye":           "goodbye",
         "repeat":            "faq_repeat",
         "not_understood":    "not_understood",
+        "ask_product":       "ask_product",
+        "ask_budget":        "ask_budget",
+        "ack_sofa":          "ack_sofa",
+        "ack_bed":           "ack_bed",
+        "ack_sofa_bed":      "ack_sofa_bed",
+        "ack_dining":        "ack_dining",
+        "ack_wardrobe":      "ack_wardrobe",
+        "ack_office":        "ack_office",
+        "ack_general":       "ack_general",
+        "ack_budget":        "ack_budget",
+        "not_understood_budget":  "not_understood_budget",
+        "not_understood_urgency": "not_understood_urgency",
     }
 
     # FAQ source tags (from knowledge.py)
@@ -295,14 +322,30 @@ def _source_to_static_key(source: str, lang: str) -> Optional[str]:
 
     # Objection tags
     OBJ_MAP = {
-        "obj_expensive":    "obj_expensive",
-        "obj_think":        "obj_think",
-        "obj_online":       "obj_online",
-        "obj_busy":         "obj_busy",
-        "faq:expensive":    "obj_expensive",
-        "faq:think":        "obj_think",
-        "faq:online_comp":  "obj_online",
-        "faq:busy":         "obj_busy",
+        "obj_expensive":       "obj_expensive",
+        "obj_think":           "obj_think",
+        "obj_online":          "obj_online",
+        "obj_busy":            "obj_busy",
+        "faq:expensive":       "obj_expensive",
+        "faq:think":           "obj_think",
+        "faq:online_comp":     "obj_online",
+        "faq:busy":            "obj_busy",
+        # ── New objection handlers ──────────────────────────────────────
+        "obj_think_wrapup":    "obj_think_wrapup",
+        "obj_online_wrapup":   "obj_online_wrapup",
+        "goodbye_warm":        "goodbye_warm",
+        "hook_positive":       "hook_positive",
+        "hook_hesitant":       "hook_hesitant",
+        "hook_negative_1":     "hook_negative_1",
+        "hook_negative_2":     "hook_negative_2",
+        "product_vague":       "product_vague",
+        "product_busy":        "product_busy",
+        # ── Wrap-up per product ─────────────────────────────────────────
+        "wrap_up_dining":      "wrap_up_dining",
+        "wrap_up_sofa":        "wrap_up_sofa",
+        "wrap_up_bed":         "wrap_up_bed",
+        "wrap_up_office":      "wrap_up_office",
+        "wrap_up_general":     "wrap_up_general",
     }
 
     key = STATE_MAP.get(source) or FAQ_MAP.get(source) or OBJ_MAP.get(source)

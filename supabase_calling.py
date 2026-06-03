@@ -83,9 +83,50 @@ def normalize_budget(raw: str) -> str:
     normalized = ''.join(DEVANAGARI_DIGITS.get(c, c) for c in raw)
     normalized = normalized.lower().strip('.,!? ।')
 
+    # Range like "1 se 2 lakh", "ek se do lakh" — take HIGHER bound (must run before _parse_hindi_words)
+    WMAP = {'ek':'1','do':'2','teen':'3','char':'4','paanch':'5','chhe':'6',
+            'saat':'7','aath':'8','nau':'9','das':'10','dedh':'1.5','dhai':'2.5',
+            'एक':'1','दो':'2','तीन':'3','चार':'4','पाँच':'5','पांच':'5',
+            'छह':'6','सात':'7','आठ':'8','नौ':'9','दस':'10','डेढ':'1.5','ढाई':'2.5'}
+    import re as _r
+    norm2 = normalized
+    for w, d in WMAP.items():
+        norm2 = norm2.replace(w, d)
+    range_m = _r.search(
+        r'(\d+(?:\.\d+)?)\s*(?:se|to|से|-)\s*(\d+(?:\.\d+)?)\s*(lakh|lac|लाख|hazaar|hazar|हज़ार|हजार|k|thousand)?',
+        norm2, _r.IGNORECASE)
+    if range_m:
+        higher = float(range_m.group(2))
+        u = (range_m.group(3) or '').lower().strip()
+        if u in ('lakh','lac','लाख'):     return _format_inr(int(higher * 100000))
+        if u in ('hazaar','hazar','हज़ार','हजार','k','thousand'): return _format_inr(int(higher * 1000))
+        if higher >= 1000: return _format_inr(int(higher))
+
     amount = _parse_hindi_words(normalized)
     if amount:
         return _format_inr(amount)
+    # old range block below — skip "1 se 2 lakh", "ek se do lakh" — take higher bound
+    import re as _re2
+    WMAP = {
+        'ek':'1','do':'2','teen':'3','char':'4','paanch':'5','chhe':'6',
+        'saat':'7','aath':'8','nau':'9','das':'10','dedh':'1.5','dhai':'2.5',
+        'एक':'1','दो':'2','तीन':'3','चार':'4','पाँच':'5','पांच':'5',
+        'छह':'6','सात':'7','आठ':'8','नौ':'9','दस':'10','डेढ':'1.5','ढाई':'2.5',
+    }
+    norm2 = normalized
+    for w, d in WMAP.items():
+        norm2 = _re2.sub(r'(?<![\w])' + _re2.escape(w) + r'(?![\w])', d, norm2)
+    range_m = _re2.search(
+        r'(\d+(?:\.\d+)?)\s*(?:se|to|से|-)\s*(\d+(?:\.\d+)?)\s*'
+        r'(lakh|lac|लाख|hazaar|hazar|हज़ार|हजार|k|thousand)?',
+        norm2, _re2.IGNORECASE
+    )
+    if range_m:
+        higher = float(range_m.group(2))
+        u = (range_m.group(3) or '').lower().strip()
+        if u in ('lakh','lac','लाख'):     return _format_inr(int(higher * 100000))
+        if u in ('hazaar','hazar','हज़ार','हजार','k','thousand'): return _format_inr(int(higher * 1000))
+        if higher >= 1000:                return _format_inr(int(higher))
 
     m = re.search(
         r'[₹]?\s*(\d+(?:\.\d+)?)\s*'
@@ -98,7 +139,7 @@ def normalize_budget(raw: str) -> str:
         if unit in ('hazaar', 'hazar', 'हज़ार', 'हजार', 'k', 'thousand'):
             amount = int(num * 1000)
         elif unit in ('lakh', 'lac', 'लाख'):
-            amount = int(num * 100000)
+            amount = num * 100000
         elif unit in ('cr', 'crore'):
             amount = int(num * 10000000)
         elif num >= 1000:
