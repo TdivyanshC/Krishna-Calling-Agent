@@ -58,6 +58,9 @@ STT_FIXES = {
     "चेयर":   "chair",
     "चेहरे":  "chair",
     "सोफ़ा":   "sofa",
+    "सत्रह":  "sattar",
+    "सतरह":  "sattar",
+
     "तोफा":   "sofa",
     "तोफ़ा":  "sofa",
     "सोफा":   "sofa",

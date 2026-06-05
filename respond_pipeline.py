@@ -178,8 +178,19 @@ async def respond_v2(ws, session, audio: bytes, call_uuid: str, play_fn=None) ->
 
         raw_lower = text.strip(".,!? ।").lower()
         if raw_lower in ACK_WORDS or text.strip(".,!? ।") in ACK_WORDS:
-            logger.info(f"[{call_uuid}] ACK — silent")
-            return
+            # In QUALIFY_PRODUCT: greetings should trigger ask_product, not silence
+            if session.state == "QUALIFY_PRODUCT" and session.turn_count <= 4:
+                logger.info(f"[{call_uuid}] ACK in QUALIFY_PRODUCT — asking product")
+                text = "हेलो"
+                text_fixed = "hello"
+            # In WRAP_UP: "ओके थैंक यू" should trigger goodbye, not silence
+            elif session.state == "WRAP_UP":
+                logger.info(f"[{call_uuid}] ACK in WRAP_UP — goodbye")
+                text = "thanks"
+                text_fixed = "thanks"
+            else:
+                logger.info(f"[{call_uuid}] ACK — silent")
+                return
 
         text_fixed = fix_stt(text)
 
@@ -197,7 +208,9 @@ async def respond_v2(ws, session, audio: bytes, call_uuid: str, play_fn=None) ->
                 ack_key = pending_ack
                 ack_wav = get_static_audio(ack_key, lang)
                 if ack_wav:
-                    ack_url = f"{BASE_URL}/audio/static/{ack_key}_{lang}.wav"
+                    import os as _os
+                    _base = _os.getenv("BASE_URL", "https://voice.thesocialhood.in")
+                    ack_url = f"{_base}/audio/static/{ack_key}_{lang}.wav"
                     await play_fn(call_uuid, ack_url)
                     logger.info(f"[{call_uuid}] ACK played → {ack_key}")
                     await asyncio.sleep(0.8)

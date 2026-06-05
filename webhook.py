@@ -502,7 +502,7 @@ async def transcribe(wav_bytes: bytes) -> str:
                 headers={"API-Subscription-Key": SARVAM_API_KEY},
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
                 data={
-                    "model": "saarika:v2.5",
+                    "model": "saaras:v3",
                     "language_code": "hi-IN",
                     "with_timestamps": "false",
                     "with_disfluencies": "false",
@@ -642,6 +642,20 @@ def extract_product(text: str) -> str | None:
 
 def extract_budget(text: str) -> str | None:
     tl = text.lower()
+    # Convert Hindi number words to digits before regex
+    _WMAP = {
+        "ek":"1","do":"2","teen":"3","char":"4","paanch":"5","chhe":"6",
+        "saat":"7","aath":"8","nau":"9","das":"10","gyarah":"11","barah":"12",
+        "terah":"13","chaudah":"14","pandrah":"15","solah":"16","satrah":"17",
+        "atharah":"18","unnis":"19","bees":"20","tees":"30","chalis":"40",
+        "pachaas":"50","saath":"60","sattar":"70","assi":"80","nabbe":"90",
+        "एक":"1","दो":"2","तीन":"3","चार":"4","पाँच":"5","पांच":"5",
+        "छह":"6","सात":"7","आठ":"8","नौ":"9","दस":"10","बीस":"20",
+        "तीस":"30","चालीस":"40","पचास":"50","साठ":"60","सत्तर":"70",
+        "सत्रह":"70","अस्सी":"80","नब्बे":"90","डेढ":"1.5","ढाई":"2.5","साढ़े":"1.5","sadhe":"1.5","dedh":"1.5","aadha":"0.5",
+    }
+    for w, d in _WMAP.items():
+        tl = tl.replace(w, d)
     # Range: '60 se 70 hazaar', '1 se 2 lakh', '60 से 70 हजार' — take higher bound
     range_m = re.search(
         r'(\d[\d,]*)\s*(?:se|to|से|-)\s*(\d[\d,]*)\s*'
@@ -833,23 +847,27 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
 
         # ── Goodbye signals: first attempt → try recovery ─────────────────
         goodbye_signals = {"nahi","no","nope","shukriya","thanks","bye","band karo",
-                          "नहीं","शुक्रिया","बस","bas","rehne do","theek hai","enough"}
+                          "नहीं","शुक्रिया","बस","bas","rehne do","theek hai","enough",
+                          "ok thank you","okay thank you","oke thank you",
+                          "ओके थैंक यू","ओके, थैंक यू","थैंक यू","thanks bye",
+                          "thank you","shukriya","dhanyawad","धन्यवाद","शुक्रिया"}
         hard_exit = getattr(session, "recovery_tried", False)
+        lead_complete = all(session.lead.get(k) for k in ["product","budget","urgency"])
         if any(g in tl for g in goodbye_signals) or len(tl.split()) <= 2:
-            if not hard_exit:
-                # First no → soft recovery
-                session.recovery_tried = True
-                reply = "जी समझ गई! बस WhatsApp पर कुछ options भेज देती हूँ — कभी भी देखिएगा, कोई pressure नहीं। और कोई सवाल हो तो बेझिझक पूछिए!"
-                session.conversation.append(("user", text_raw))
-                session.conversation.append(("assistant", reply))
-                return reply, "obj_busy"
-            else:
-                # Second no → warm exit
+            if lead_complete or hard_exit:
+                # Lead complete or second goodbye → warm exit directly
                 session.state = "DONE"
-                reply = "बहुत बहुत शुक्रिया! आपसे बात करके अच्छा लगा। जब भी ज़रूरत हो — Krishna Furniture हमेशा यहाँ है। आपका दिन शानदार हो!"
+                reply = "बहुत बहुत शुक्रिया! आपसे बात करके अच्छा लगा। WhatsApp पर options भेज दिए हैं — ज़रूर देखिएगा। आपका दिन शानदार हो!"
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", reply))
                 return reply, "goodbye_warm"
+            else:
+                # Lead incomplete, first goodbye → soft recovery
+                session.recovery_tried = True
+                reply = "जी समझ गई! बस WhatsApp पर कुछ options भेज देती हूँ — कभी भी देखिएगा, कोई pressure नहीं।"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "obj_busy"
 
         # ── Positive / question → FAQ mode ────────────────────────────────
         session.faq_mode = True
