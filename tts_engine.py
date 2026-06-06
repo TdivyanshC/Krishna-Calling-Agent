@@ -63,9 +63,9 @@ STATIC_RESPONSES = {
         "en":       "Welcome to Krishna Furniture, this is Priya speaking — how can I help you today?",
     },
     "greeting_outbound": {
-        "hinglish": "Namaskar! Main Priya baat kar rahi hoon Krishna Furniture se — aapne hamare furniture mein interest dikhaya tha, toh personally connect karna chahti thi. Ek minute hai aapke paas?",
-        "hi":       "नमस्ते! मैं प्रिया बात कर रही हूँ Krishna Furniture से — आपने हमारे furniture में interest दिखाया था, तो personally connect करना चाहती थी। एक मिनट है आपके पास?",
-        "en":       "Hello! This is Priya from Krishna Furniture — you had shown interest in our furniture, so I wanted to personally connect. Do you have just a minute?",
+        "hinglish": "Namaskar! Main Priya hoon Krishna Furniture se — kya aap abhi baat kar sakte hain?",
+        "hi":       "नमस्ते! मैं प्रिया हूँ Krishna Furniture से — क्या आप अभी बात कर सकते हैं?",
+        "en":       "Hello! This is Priya from Krishna Furniture — is this a good time to talk?",
     },
 
     # ── Qualification questions ────────────────────────────────────────────────

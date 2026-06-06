@@ -37,14 +37,14 @@ TENANT_ID         = os.getenv("TENANT_ID", "krishna_furniture")
 WEBHOOK_BASE_URL  = os.getenv("WEBHOOK_BASE_URL", "https://voice.thesocialhood.in")
 CONCURRENCY_LIMIT = int(os.getenv("CONCURRENCY_LIMIT", "2"))
 
-CALL_START_HOUR = 11   # 11:00 AM IST
+CALL_START_HOUR = 10   # 10:00 AM IST
 CALL_END_HOUR   = 22   # 10:00 PM IST
 
 # retry_count → days to wait before next attempt
 RETRY_GAPS  = {0: 1, 1: 2, 2: 3}
 MAX_RETRIES = 3
 
-POLL_INTERVAL = 60   # seconds
+POLL_INTERVAL = 20   # seconds
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────

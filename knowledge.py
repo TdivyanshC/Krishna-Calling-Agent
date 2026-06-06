@@ -17,6 +17,8 @@ FAQ_PATH = "/home/voiceagent/voice-ai/faq_database.json"
 
 # ─── STT Correction ───────────────────────────────────────────────────────────
 STT_FIXES = {
+    r"\bchahiye\b":       "चाहिए",   # Roman → Devanagari
+    r"\bchahie\b":        "चाहिए",
     r"\bso far\b":        "sofa",
     r"\bsofa\b":          "sofa",
     r"\bsofer\b":         "sofa",
@@ -56,8 +58,33 @@ STT_FIXES = {
     "शेयर":    "chair",      # "chair" sounds like "share" in Hindi
     "छेड़":    "chair",      # another mishearing of chair
     "चेयर":   "chair",
+    "वॉर्डरोब":    "wardrobe",
+    "वार्डरोब":    "wardrobe",
+    "वार्ड रोब":   "wardrobe",
+    "वॉर्ड रोब":   "wardrobe",
+    "रब":           "wardrobe",
+    "डाइनिंग":      "dining",
+    "डाइनिंग टेबल": "dining",
+    "बेड":           "bed",
+    "अल्मारी":      "almirah",
+    "अलमारी":       "almirah",
     "चेहरे":  "chair",
     "सोफ़ा":   "sofa",
+    "सो फा":      "sofa",    # Saaras splits sofa
+    "सो फ़ा":     "sofa",
+    "सो फ":      "sofa",
+    "वॉर्डरोब":  "wardrobe", # Devanagari wardrobe
+    "वार्डरोब":  "wardrobe",
+    "वार्ड रोब": "wardrobe", # split
+    "वॉर्ड रोब": "wardrobe", # split
+    "रब":         "wardrobe", # tail-end split of wardrobe
+    "डाइनिंग":   "dining",   # Devanagari dining
+    "डाइनिंग टेबल": "dining",
+    "बेड":        "bed",      # Devanagari bed
+    "सोफ़ा":      "sofa",
+    "अल्मारी":   "almirah",
+    "अलमारी":    "almirah",
+
     "सत्रह":  "sattar",
     "सतरह":  "sattar",
 
@@ -115,6 +142,11 @@ ACK_WORDS = {
     "अच्छा","ओके","यस","हाँ जी।","जी।","यस।","ओके।","ठीक।",
     "हाँ जी बोलिए","हाँ बोलिए","हाँ जी बोलिए।","हाँ बोलिए।",
     "बोलिए","बोलिए।","जी बोलिए","जी बोलिए।","हाँ जी बताइए",
+    # Greetings used as ACK (caller checking if agent is there)
+    "हेलो","हेलो।","hello","hello?","हैलो","हैलो।",
+    "हां बोलो","बोलो","बोलो।","हां बोलो।","जी बताइए","जी बताइए।",
+    "यह।","ये।","यह","ये",  # pickup sounds
+
     "ओके, थैंक यू।","ओके थैंक यू","थैंक यू।","थैंक्स।","शुक्रिया।",
     "बहुत शुक्रिया।","धन्यवाद।","ठीक है जी।","अच्छा जी।",
 }

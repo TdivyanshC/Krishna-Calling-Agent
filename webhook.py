@@ -164,8 +164,8 @@ def correct_stt(text: str) -> str:
 
 # ─── VAD ─────────────────────────────────────────────────────────────────────
 SILENCE_THRESHOLD = 400
-MIN_SPEECH_FRAMES = 3
-TRAILING_SILENCE  = 10
+MIN_SPEECH_FRAMES = 6    # 120ms minimum — filters out clicks and noise
+TRAILING_SILENCE  = 18   # 360ms — enough for natural mid-sentence pauses
 BARGE_IN_FRAMES   = 4
 SAMPLE_RATE       = 8000
 
@@ -389,6 +389,7 @@ class CallSession:
         self.lead              = {"product": None, "budget": None, "urgency": None}
         self.faq_mode          = False
         self.last_reply        = ""
+        self.empty_turns       = 0           # consecutive empty transcripts
         self.greeted           = False
         self.lead_id: str | None = None
         self.lang              = "hinglish"
@@ -770,6 +771,12 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
         if product and not session.lead["product"]:
             session.lead["product"] = product
             session.slots["product"] = product
+        elif product and product != session.lead.get("product"):
+            # Caller switched product mid-flow — ack and update silently, don't break flow
+            old_product = session.lead.get("product", "furniture")
+            session.lead["product"] = product
+            session.slots["product"] = product
+            logger.info(f"[{call_uuid}] Product switched {old_product} → {product} during QUALIFY_BUDGET")
         budget = extract_budget(text_fixed) or extract_budget(text_raw)
         if budget:
             session.lead["budget"] = budget.strip(".,!? ।")
@@ -777,6 +784,7 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             session.state = "QUALIFY_URGENCY"
             logger.info(f"[{call_uuid}] LEAD budget={budget}")
             reply = "और कब तक चाहिए — कोई जल्दी है, या अभी देख रहे हैं बस?"
+            session.urgency_lang_override = "hinglish"  # always use hinglish audio
         else:
             # Vague answer like "लगभग", "roughly" — apologise then re-ask
             vague_words = {"लगभग","lagbhag","roughly","almost","करीब","तकरीबन","शायद","pata nahi","nahi pata","hmm","hm","umm","uhh"}
@@ -936,9 +944,23 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
     try:
         text = await transcribe(ulaw_to_wav(audio))
         if not text or len(text.strip()) < 2:
-            logger.info(f"[{call_uuid}] Empty transcript — skip")
+            session.empty_turns += 1
+            logger.info(f"[{call_uuid}] Empty transcript — skip (#{session.empty_turns})")
+            if session.empty_turns >= 3 and session.state in ("WRAP_UP", "DONE"):
+                logger.info(f"[{call_uuid}] 3 empty turns in {session.state} — auto-hangup")
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        r = await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
+                        )
+                    logger.info(f"[{call_uuid}] Silence auto-hangup → {r.status_code}")
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] Silence auto-hangup error: {he}")
+            return
             return
 
+        session.empty_turns = 0  # reset on real speech
         turn_lang = detect_lang(text)
         if not hasattr(session, "lang"):
             session.lang = turn_lang
@@ -957,6 +979,43 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             return
         stripped = text.strip(".,!? \u0964")
         if stripped.lower() in ACK_WORDS or stripped in ACK_WORDS:
+            if session.state == "WRAP_UP":
+                # ACK after wrap-up = caller is done — play goodbye and hang up
+                logger.info(f"[{call_uuid}] ACK after WRAP_UP → goodbye_warm + auto-hangup")
+                session.state = "DONE"
+                from tts_engine import STATIC_RESPONSES
+                lang = getattr(session, "lang", "hi")
+                reply = STATIC_RESPONSES.get("goodbye_warm", {}).get(lang) or "बहुत बहुत शुक्रिया! आपका दिन शानदार हो!"
+                wav, audio_url, was_cached = await get_speech(reply, lang, "goodbye_warm")
+                if audio_url:
+                    await play_audio_url(call_uuid, audio_url)
+                    dur = session.priya_starts_speaking(wav) if wav else 2.0
+                    await asyncio.sleep(dur + 1.0)
+                    session.priya_stops_speaking()
+                    try:
+                        async with httpx.AsyncClient(timeout=8) as hc:
+                            r = await hc.delete(
+                                f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                                headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
+                            )
+                        logger.info(f"[{call_uuid}] Auto-hangup → {r.status_code}")
+                    except Exception as he:
+                        logger.error(f"[{call_uuid}] Auto-hangup error: {he}")
+                return
+            if session.state == "QUALIFY_PRODUCT":
+                # ACK during product question = caller is listening, re-ask product
+                logger.info(f"[{call_uuid}] ACK in QUALIFY_PRODUCT → ask_product")
+                audio_lang = getattr(session, "lang", "hi")
+                from tts_engine import STATIC_RESPONSES
+                reply = STATIC_RESPONSES.get("ask_product", {}).get(audio_lang) or STATIC_RESPONSES.get("ask_product", {}).get("hi") or "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब?"
+                wav, audio_url, was_cached = await get_speech(reply, audio_lang, "ask_product")
+                if not audio_url:
+                    # fallback to qualify_product static
+                    reply2 = STATIC_RESPONSES.get("qualify_product", {}).get(audio_lang) or STATIC_RESPONSES.get("qualify_product", {}).get("hinglish", reply)
+                    wav, audio_url, was_cached = await get_speech(reply2, audio_lang, "qualify_product")
+                if audio_url:
+                    await play_audio_url(call_uuid, audio_url)
+                return
             logger.info(f"[{call_uuid}] ACK — silent")
             return
 
@@ -969,10 +1028,13 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         logger.info(f"[{call_uuid}] [{session.state}] {source} → '{reply[:60]}'")
 
         lang = getattr(session, "lang", "hinglish")
+        # Some responses always use a fixed language for audio regardless of caller lang
+        audio_lang = getattr(session, "urgency_lang_override", None) if source == "qualify_urgency" else None
+        audio_lang = audio_lang or lang
         from respond_pipeline import _source_to_static_key
-        static_key = _source_to_static_key(source, lang)
+        static_key = _source_to_static_key(source, audio_lang)
 
-        wav, audio_url, was_cached = await get_speech(reply, lang, static_key)
+        wav, audio_url, was_cached = await get_speech(reply, audio_lang, static_key)
 
         if not audio_url:
             logger.error(f"[{call_uuid}] TTS failed entirely")
@@ -990,6 +1052,20 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         await play_audio_url(call_uuid, audio_url)
         await asyncio.sleep(duration)
         session.priya_stops_speaking()
+
+        # Auto-hangup after goodbye plays
+        if session.state == "DONE":
+            await asyncio.sleep(1.2)
+            logger.info(f"[{call_uuid}] DONE — auto-hangup")
+            try:
+                async with httpx.AsyncClient(timeout=8) as hc:
+                    r = await hc.delete(
+                        f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                        headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
+                    )
+                logger.info(f"[{call_uuid}] Auto-hangup → {r.status_code}")
+            except Exception as he:
+                logger.error(f"[{call_uuid}] Auto-hangup error: {he}")
 
     except Exception as e:
         logger.error(f"[{call_uuid}] respond error: {e}")

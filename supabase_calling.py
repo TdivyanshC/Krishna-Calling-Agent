@@ -328,15 +328,25 @@ async def finalize_call(
     slots = getattr(session, "slots", {})
 
     product_interest = lead.get("product") or slots.get("product")
-    normalized = await ai_normalize_lead_fields(
-        product     = product_interest,
-        budget_raw  = lead.get("budget") or slots.get("budget"),
-        urgency_raw = lead.get("urgency") or slots.get("urgency"),
-    )
-    product_interest  = normalized.get("product") or product_interest
-    budget_mentioned  = normalized.get("budget")
-    urgency_mentioned = normalized.get("urgency")
-    budget_numeric    = normalized.get("budget_numeric")
+    budget_raw  = lead.get("budget") or slots.get("budget")
+    urgency_raw = lead.get("urgency") or slots.get("urgency")
+
+    # Only call Groq if we actually have data to normalize
+    if budget_raw or urgency_raw:
+        normalized = await ai_normalize_lead_fields(
+            product     = product_interest,
+            budget_raw  = budget_raw,
+            urgency_raw = urgency_raw,
+        )
+        product_interest  = normalized.get("product") or product_interest
+        budget_mentioned  = normalized.get("budget")
+        urgency_mentioned = normalized.get("urgency")
+        budget_numeric    = normalized.get("budget_numeric")
+    else:
+        # No lead data collected — skip Groq entirely
+        budget_mentioned  = None
+        urgency_mentioned = None
+        budget_numeric    = None
 
     intents_fired = set(getattr(session, "intents_fired", []))
     score, score_breakdown = _compute_score_from_normalized(
@@ -349,7 +359,7 @@ async def finalize_call(
         intents_fired  = intents_fired,
         slots          = slots,
     )
-    tier       = "hot" if score >= 70 else "warm" if score >= 40 else "cold"
+    tier       = "hot" if score >= 65 else "warm" if score >= 35 else "cold"
     transcript = getattr(session, "conversation", [])
 
     # Detect mid_answered: picked up but did not complete all 3 slots
@@ -508,6 +518,53 @@ async def _update_lead_score(lead_id: str, score: int, tier: str):
         logger.error(f"_update_lead_score error: {e}")
 
 
+
+def _days_until_urgency(urgency_str: str) -> int | None:
+    """Return approximate days until the urgency, based on today's date.
+    Returns None if we can't determine it."""
+    from datetime import date
+    import re
+    u = urgency_str.lower()
+    today = date.today()
+    weekday_today = today.weekday()  # Monday=0, Sunday=6
+
+    day_map = {
+        "monday":    0, "सोमवार": 0, "somvar":  0, "मंडे":   0,
+        "tuesday":   1, "मंगलवार":1, "mangalvar":1,"ट्यूजडे":1,
+        "wednesday": 2, "बुधवार": 2, "budhvar": 2, "वेडनसडे":2,
+        "thursday":  3, "गुरुवार": 3, "guruvar": 3, "थर्सडे": 3,
+        "friday":    4, "शुक्रवार":4, "shukravar":4,"फ्राइडे":4,
+        "saturday":  5, "शनिवार": 5, "shanivar": 5,"सैटरडे": 5,
+        "sunday":    6, "रविवार": 6, "ravivar":  6, "संडे":   6,
+    }
+    for name, target_wd in day_map.items():
+        if name in u:
+            days = (target_wd - weekday_today) % 7
+            if days == 0:
+                days = 7  # same day next week
+            return days
+
+    # Numeric day patterns
+    m = re.search(r"in (\d+)[- ](\d+) days?", u)
+    if m:
+        return int(m.group(2))  # take higher bound
+    m = re.search(r"in (\d+) days?", u)
+    if m:
+        return int(m.group(1))
+    if "tomorrow" in u or "kal" in u:
+        return 1
+    if "today" in u or "aaj" in u:
+        return 0
+    if "this week" in u or "is hafte" in u or "इस हफ्ते" in u:
+        return 5
+    if "next week" in u or "agle hafte" in u or "अगले हफ्ते" in u:
+        return 10
+    if "this month" in u or "is mahine" in u:
+        return 20
+    if "next month" in u or "agle mahine" in u:
+        return 40
+    return None
+
 def _compute_score_from_normalized(
     product:        str,
     budget:         str,
@@ -540,20 +597,24 @@ def _compute_score_from_normalized(
         elif "objection:expensive" in intents_fired: breakdown["budget"] = 6
 
     if urgency and urgency != "Not specified":
-        u = urgency.lower()
-        if any(x in u for x in ["today", "tomorrow", "in 2 days", "in 1 day"]):
-            breakdown["urgency"] = 25
-        elif any(x in u for x in ["in 2-3 days", "in 3 days", "this week"]):
-            breakdown["urgency"] = 22
-        elif any(x in u for x in ["next week", "in 2 weeks"]):
-            breakdown["urgency"] = 16
-        elif any(x in u for x in ["this month"]):
-            breakdown["urgency"] = 10
-        elif any(x in u for x in ["next month", "in 2-3 months"]):
-            breakdown["urgency"] = 6
+        days = _days_until_urgency(urgency)
+        if days is not None:
+            if days <= 1:
+                breakdown["urgency"] = 25
+            elif days <= 4:
+                breakdown["urgency"] = 22
+            elif days <= 7:
+                breakdown["urgency"] = 16
+            elif days <= 30:
+                breakdown["urgency"] = 10
+            elif days <= 90:
+                breakdown["urgency"] = 6
+            else:
+                breakdown["urgency"] = 4
         else:
             breakdown["urgency"] = 4
     elif "faq:visit" in intents_fired:
+        breakdown["urgency"] = 18
         breakdown["urgency"] = 18
 
     state_pts = {
