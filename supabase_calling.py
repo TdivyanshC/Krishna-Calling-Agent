@@ -307,6 +307,56 @@ async def insert_call_log(
 
 
 # ── Step 3: UPDATE call_log + INSERT summary + upsert stats ───────
+def _compute_reactivation_score(session) -> tuple[int, str]:
+    """Score a reactivation call based on engagement signals."""
+    intents = getattr(session, "react_intents_seen", set())
+    turns   = getattr(session, "turn_count", 0)
+    wa_sent = getattr(session, "wa_sent", False)
+    state   = getattr(session, "react_state", "GREETING")
+
+    score = 0
+
+    # WA accepted — strongest signal
+    if "wa_ok" in intents or "wa_prefers" in intents:
+        score += 40
+    elif wa_sent:
+        score += 20  # WA sent even without explicit yes
+
+    # Buying intent
+    if "buying_signal" in intents:
+        score += 30
+
+    # Asked about exchange — genuinely curious
+    if "offer_clarify" in intents or "offer_maths_challenge" in intents:
+        score += 20
+
+    # Product specific interest
+    if any(i in intents for i in ["product_sofa","product_bed","product_wardrobe","product_dining"]):
+        score += 15
+
+    # Positive engagement
+    if "positive" in intents and turns >= 2:
+        score += 10
+
+    # Trust issue but stayed on call
+    if "trust_issue" in intents and turns >= 3:
+        score += 10
+
+    # Soft objections — still a warm lead
+    if "sochna_hai" in intents:
+        score += 8
+    if "busy" in intents:
+        score += 5
+
+    # Hard rejections — zero out
+    if "dnc" in intents or "not_interested" in intents:
+        score = 0
+
+    score = min(score, 100)
+    tier  = "hot" if score >= 60 else "warm" if score >= 25 else "cold"
+    return score, tier
+
+
 async def finalize_call(
     call_uuid:    str,
     session,
@@ -316,6 +366,9 @@ async def finalize_call(
 ):
     if not SUPABASE_URL:
         return
+
+    # Wait for insert_call_log background task to complete before writing call_summaries
+    await asyncio.sleep(1.5)
 
     try:
         duration = int(duration_str)
@@ -349,25 +402,40 @@ async def finalize_call(
         budget_numeric    = None
 
     intents_fired = set(getattr(session, "intents_fired", []))
-    score, score_breakdown = _compute_score_from_normalized(
-        product        = product_interest,
-        budget         = budget_mentioned,
-        urgency        = urgency_mentioned,
-        budget_numeric = budget_numeric or 0,
-        final_state    = getattr(session, "state", "QUALIFY_PRODUCT"),
-        turn_count     = getattr(session, "turn_count", 0),
-        intents_fired  = intents_fired,
-        slots          = slots,
-    )
-    tier       = "hot" if score >= 65 else "warm" if score >= 35 else "cold"
+    # Use reactivation scoring for reactivation campaign
+    if getattr(session, "campaign", "") == "reactivation":
+        score, tier = _compute_reactivation_score(session)
+        score_breakdown = {}
+    else:
+        score, score_breakdown = _compute_score_from_normalized(
+            product        = product_interest,
+            budget         = budget_mentioned,
+            urgency        = urgency_mentioned,
+            budget_numeric = budget_numeric or 0,
+            final_state    = getattr(session, "react_state", None) or getattr(session, "state", "QUALIFY_PRODUCT"),
+            turn_count     = getattr(session, "turn_count", 0),
+            intents_fired  = intents_fired,
+            slots          = slots,
+        )
+        tier = "hot" if score >= 65 else "warm" if score >= 35 else "cold"
     transcript = getattr(session, "conversation", [])
 
-    # Detect mid_answered: picked up but did not complete all 3 slots
-    has_product      = bool(product_interest)
-    has_budget       = bool(budget_mentioned)
-    has_urgency      = bool(urgency_mentioned)
-    all_slots_filled = has_product and has_budget and has_urgency
+    # Detect mid_answered: picked up but did not complete conversation
     call_was_answered = duration > 5
+    if getattr(session, "campaign", "") == "reactivation":
+        # For reactivation: answered = WA sent OR buying signal OR score >= 25
+        react_intents = getattr(session, "react_intents_seen", set())
+        all_slots_filled = (
+            getattr(session, "wa_sent", False) or
+            "buying_signal" in react_intents or
+            "wa_ok" in react_intents or
+            score >= 25
+        )
+    else:
+        has_product      = bool(product_interest)
+        has_budget       = bool(budget_mentioned)
+        has_urgency      = bool(urgency_mentioned)
+        all_slots_filled = has_product and has_budget and has_urgency
 
     # Clean phone for n8n — strip + and spaces
     phone_clean = _clean_phone(from_number)
@@ -403,15 +471,34 @@ async def finalize_call(
                 "product_interest":  product_interest,
                 "budget_mentioned":  budget_mentioned,
                 "urgency_mentioned": urgency_mentioned,
-                "final_state":       getattr(session, "state", ""),
+                "final_state":       getattr(session, "react_state", None) or getattr(session, "state", ""),
                 "turn_count":        getattr(session, "turn_count", 0),
                 "intents_fired":     list(intents_fired),
                 "slots":             slots,
                 "full_transcript":   transcript,
+                "duration_seconds":  duration,
+                "caller_name":       getattr(session, "customer_name", None) or None,
+                "started_at":        getattr(session, "started_at", None),
                 "lead_score":        score,
                 "lead_tier":         tier,
                 "tenant_id":         TENANT_ID,
                 "budget_numeric":    budget_numeric,
+                "campaign_type":     getattr(session, "campaign", "fresh_lead") or "fresh_lead",
+                "first_response_latency": getattr(session, "first_reply_ts", None),
+                "avg_response_latency":   round(sum(getattr(session, "turn_latencies", [0])) / max(len(getattr(session, "turn_latencies", [1])), 1), 3),
+                "interest_signals":       len([i for i in getattr(session, "react_intents_seen", set()) 
+                                          if i in ("positive","buying_signal","wa_ok","offer_clarify","product_sofa","product_bed","product_wardrobe","product_dining","wa_prefers")]) 
+                                          if getattr(session, "campaign", "") == "reactivation" 
+                                          else getattr(session, "interest_signals", 0),
+                "rejection_signals":      len([i for i in getattr(session, "react_intents_seen", set()) 
+                                          if i in ("not_interested","dnc","busy","sochna_hai","expensive","online_cheaper")]) 
+                                          if getattr(session, "campaign", "") == "reactivation" 
+                                          else getattr(session, "rejection_signals", 0),
+                "deepest_state":          getattr(session, "react_state", None) or getattr(session, "state", "GREETING"),
+                "cta_accepted":           getattr(session, "wa_accepted", False),
+                "wa_triggered":           getattr(session, "wa_sent", False),
+                "offer_explained":        "offer_clarify" in getattr(session, "react_intents_seen", set()),
+                "customer_response":      "positive" if "wa_ok" in getattr(session, "react_intents_seen", set()) else "negative" if "not_interested" in getattr(session, "react_intents_seen", set()) else None,
             }
             r2 = await client.post(
                 f"{SUPABASE_URL}/rest/v1/call_summaries",
@@ -483,7 +570,7 @@ async def finalize_call(
 
     # ── Fire n8n webhook → triggers WhatsApp follow-up ────────────
     # Only fire if call was actually answered (duration > 0)
-    if duration > 0 and phone_clean:
+    if duration > 0 and phone_clean and getattr(session, "campaign", "") != "reactivation":
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r_n8n = await client.post(

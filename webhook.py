@@ -393,7 +393,15 @@ class CallSession:
         self.greeted           = False
         self.lead_id: str | None = None
         self.lang              = "hinglish"
+        self.turn_timestamps   = []          # [(user_end_ts, priya_start_ts), ...]
+        self.call_start_ts     = None        # set when first user speech detected
+        self.first_reply_ts    = None        # set when Priya sends first audio
+        self.user_audio_frames = 0           # total frames customer spoke
+        self.priya_audio_frames= 0           # total frames Priya spoke
         self.lang_streak       = 0
+        self.campaign          = ""
+        self.customer_phone    = ""
+        self.customer_name     = ""
 
     def ingest(self, mulaw_chunk: bytes) -> tuple[bool, bytes | None]:
         pcm       = audioop.ulaw2lin(mulaw_chunk, 2)
@@ -541,7 +549,7 @@ async def text_to_speech(text: str) -> bytes | None:
                 json={
                     "inputs": [text],
                     "target_language_code": "hi-IN",
-                    "speaker": "kavya",
+                    "speaker": "shreya",
                     "pace": 1.05,
                     "speech_sample_rate": 8000,
                     "model": "bulbul:v3"
@@ -921,6 +929,20 @@ def llm_reply(text: str, session, call_uuid: str) -> tuple[str | None, str]:
 
 
 # ─── Play Audio Helper ────────────────────────────────────────────────────────
+async def _fire_followup_wa(call_uuid: str, name: str, phone: str):
+    """Fire WhatsApp for followup_wa campaign after short delay for audio to play."""
+    await asyncio.sleep(15)  # wait for message to finish playing
+    try:
+        phone_clean = phone.replace("+", "").strip()
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(
+                "https://n8n-production-aed7.up.railway.app/webhook/voice-call-complete",
+                json={"phone": phone_clean, "name": name, "campaign": "followup_wa"}
+            )
+        logger.info(f"[{call_uuid}] Followup WA fired → {r.status_code} phone={phone_clean}")
+    except Exception as e:
+        logger.error(f"[{call_uuid}] Followup WA error: {e}")
+
 async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -943,6 +965,55 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
     t0 = time.time()
     try:
         text = await transcribe(ulaw_to_wav(audio))
+
+        # ── Reactivation campaign: all turn logic lives in the engine ──────────
+        if session.campaign == "followup_wa":
+            from webhook_reactivation import handle_followup_wa_turn
+            should_continue = await handle_followup_wa_turn(session, text or "", call_uuid)
+            session.is_priya_speaking = False
+            if not should_continue:
+                await asyncio.sleep(0.8)
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK},
+                        )
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] Followup hangup error: {he}")
+            return
+        if session.campaign == "reactivation":
+            from webhook_reactivation import handle_reactivation_turn, play_key
+            # Play filler instantly so customer hears response start
+            import random
+            # Context-aware filler: match to react_state
+            _react_st = getattr(session, "react_state", "GREETING")
+            _filler_map = {
+                "GREETING":      [2, 6],   # हाँ / हाँ जी
+                "PRESENT_OFFER": [3, 4],   # बिल्कुल / अच्छा
+                "WHATSAPP_CTA":  [1, 5],   # जी / समझ गई
+                "CLOSE":         [3, 6],   # बिल्कुल / हाँ जी
+            }
+            _filler_n = random.choice(_filler_map.get(_react_st, [1, 2, 3]))
+            filler_url = f"{BASE_URL}/audio/static/react_filler_{_filler_n}_hi.wav"
+            asyncio.create_task(play_audio_url(call_uuid, filler_url))
+            session.is_priya_speaking = True
+            should_continue = await handle_reactivation_turn(session, text or "", call_uuid)
+            session.is_priya_speaking = False
+            if not should_continue:
+                await asyncio.sleep(0.8)
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK},
+                        )
+                    logger.info(f"[{call_uuid}] React hangup sent")
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] React hangup error: {he}")
+            return
+        # ── End reactivation routing ────────────────────────────────────────────
+
         if not text or len(text.strip()) < 2:
             session.empty_turns += 1
             logger.info(f"[{call_uuid}] Empty transcript — skip (#{session.empty_turns})")
@@ -1002,17 +1073,20 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                     except Exception as he:
                         logger.error(f"[{call_uuid}] Auto-hangup error: {he}")
                 return
+            from tts_engine import STATIC_RESPONSES
+            audio_lang = getattr(session, "lang", "hi")
+            reask_key = None
             if session.state == "QUALIFY_PRODUCT":
-                # ACK during product question = caller is listening, re-ask product
-                logger.info(f"[{call_uuid}] ACK in QUALIFY_PRODUCT → ask_product")
-                audio_lang = getattr(session, "lang", "hi")
-                from tts_engine import STATIC_RESPONSES
-                reply = STATIC_RESPONSES.get("ask_product", {}).get(audio_lang) or STATIC_RESPONSES.get("ask_product", {}).get("hi") or "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब?"
-                wav, audio_url, was_cached = await get_speech(reply, audio_lang, "ask_product")
-                if not audio_url:
-                    # fallback to qualify_product static
-                    reply2 = STATIC_RESPONSES.get("qualify_product", {}).get(audio_lang) or STATIC_RESPONSES.get("qualify_product", {}).get("hinglish", reply)
-                    wav, audio_url, was_cached = await get_speech(reply2, audio_lang, "qualify_product")
+                reask_key = "qualify_product"
+            elif session.state == "QUALIFY_BUDGET":
+                reask_key = "qualify_budget"
+            elif session.state == "QUALIFY_URGENCY":
+                reask_key = "qualify_urgency"
+                audio_lang = "hinglish"  # always hinglish for urgency
+            if reask_key:
+                logger.info(f"[{call_uuid}] ACK in {session.state} → re-ask {reask_key}")
+                reply = STATIC_RESPONSES.get(reask_key, {}).get(audio_lang) or STATIC_RESPONSES.get(reask_key, {}).get("hi", "")
+                wav, audio_url, was_cached = await get_speech(reply, audio_lang, reask_key)
                 if audio_url:
                     await play_audio_url(call_uuid, audio_url)
                 return
@@ -1020,6 +1094,14 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             return
 
         text_fixed = fix_stt(text)
+        # ── Sentiment tracking ──────────────────────────────────────────
+        _interest_kw  = ["kitna","kab","offer","discount","aana","dekhna","chahiye","dikhao","kitne","exchange","कितना","कब","ऑफर","आना","देखना","चाहिए","दिखाओ"]
+        _rejection_kw = ["nahin","nahi","nhi","busy","mat karo","band karo","nahin chahiye","नहीं","बिज़ी","मत करो","बंद करो","नहीं चाहिए"]
+        _tl = text.lower()
+        if not hasattr(session, "interest_signals"): session.interest_signals = 0
+        if not hasattr(session, "rejection_signals"): session.rejection_signals = 0
+        if any(k in _tl for k in _interest_kw):  session.interest_signals  += 1
+        if any(k in _tl for k in _rejection_kw): session.rejection_signals += 1
         reply, source = state_machine(text_fixed, text, session, call_uuid)
         if not reply:
             return
@@ -1034,20 +1116,33 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         from respond_pipeline import _source_to_static_key
         static_key = _source_to_static_key(source, audio_lang)
 
+        # ── Filler-first: check cache sync, play filler WHILE TTS generates ──
+        from tts_engine import get_static_audio, get_dynamic_audio
+        from filler_audio import get_filler_for_context
+
+        is_cached = (
+            get_static_audio(static_key, audio_lang) is not None
+            if static_key else False
+        ) or (get_dynamic_audio(reply, audio_lang) is not None)
+
+        if not is_cached:
+            filler_url = get_filler_for_context(source, lang)
+            if filler_url:
+                logger.info(f"[{call_uuid}] FILLER → {filler_url}")
+                asyncio.create_task(play_audio_url(call_uuid, filler_url))
+
         wav, audio_url, was_cached = await get_speech(reply, audio_lang, static_key)
 
         if not audio_url:
             logger.error(f"[{call_uuid}] TTS failed entirely")
             return
 
-        if not was_cached:
-            from filler_audio import get_filler_for_context
-            filler_url = get_filler_for_context(source, lang)
-            if filler_url:
-                asyncio.create_task(play_audio_url(call_uuid, filler_url))
-
         duration = session.priya_starts_speaking(wav) if wav else 2.0
-        logger.info(f"[{call_uuid}] Pipeline {time.time()-t0:.2f}s | cached={was_cached}")
+        _latency = round(time.time() - t0, 3)
+        logger.info(f"[{call_uuid}] Pipeline {_latency:.2f}s | cached={was_cached}")
+        if not hasattr(session, "turn_latencies"): session.turn_latencies = []
+        session.turn_latencies.append(_latency)
+        if session.first_reply_ts is None: session.first_reply_ts = _latency
 
         await play_audio_url(call_uuid, audio_url)
         await asyncio.sleep(duration)
@@ -1091,6 +1186,15 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
     await websocket.accept()
     session = CallSession(call_uuid)
     sessions[call_uuid] = session
+
+    # Attach campaign info set by /answer-outbound before WS opened
+    _meta = _session_meta.get(call_uuid, {})
+    session.campaign       = _meta.get("campaign", "")
+    session.customer_phone = _meta.get("to_phone", "")
+    session.customer_name  = _meta.get("name", "")
+    session.started_at     = datetime.now(timezone.utc).isoformat()
+    if session.campaign:
+        logger.info(f"[{call_uuid}] Campaign: {session.campaign}")
 
     async def _attach_lead_id():
         sb_url = os.getenv("SUPABASE_URL")
@@ -1173,20 +1277,21 @@ async def answer_call(request: Request):
                 _r = await _c.get(
                     f"{sb_url}/rest/v1/outbound_leads"
                     f"?phone=eq.{to_num}&tenant_id=eq.krishna_furniture"
-                    f"&select=id,name,status&limit=1",
+                    f"&select=id,name,status,campaign_type&limit=1",
                     headers=_hdrs,
                 )
                 if _r.status_code == 200 and _r.json():
                     row = _r.json()[0]
                     if row.get("status") in ("pending", "in_progress"):
-                        is_outbound = True
-                        lead_name   = row.get("name") or ""
+                        is_outbound   = True
+                        lead_name     = row.get("name") or ""
+                        lead_campaign = row.get("campaign_type") or "fresh_lead"
         except Exception as _e:
             logger.error(f"outbound detect error: {_e}")
 
     if is_outbound:
         logger.info(f"[{call_uuid}] Outbound detected → {to_num} | name={lead_name}")
-        _session_meta[call_uuid] = {"direction": "outbound", "to_phone": to_num}
+        _session_meta[call_uuid] = {"direction": "outbound", "to_phone": to_num, "campaign": lead_campaign}
         lead_id = await get_or_create_lead_id(to_num, lead_name)
         asyncio.create_task(insert_call_log(
             call_uuid   = call_uuid,
@@ -1200,9 +1305,12 @@ async def answer_call(request: Request):
         audio_url = await save_audio(greeting, f"greeting_out_{call_uuid}")
         play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
         return PlainTextResponse(
-            f'<?xml version="1.0" encoding="UTF-8"?><Response>{play_tag}'
+            f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
+            f'action="https://voice.thesocialhood.in/recording-done"/>'
+            f'{play_tag}'
             f'<Stream keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000" streamTimeout="86400">'
-            f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream></Response>',
+            f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream>'
+            f'</Response>',
             media_type="application/xml"
         )
 
@@ -1220,9 +1328,12 @@ async def answer_call(request: Request):
     audio_url = await save_audio(INBOUND_GREETING, f"greeting_{call_uuid}")
     play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
     return PlainTextResponse(
-        f'<?xml version="1.0" encoding="UTF-8"?><Response>{play_tag}'
+        f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
+        f'action="https://voice.thesocialhood.in/recording-done"/>'
+        f'{play_tag}'
         f'<Stream keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000" streamTimeout="86400">'
-        f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream></Response>',
+        f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream>'
+        f'</Response>',
         media_type="application/xml"
     )
 
@@ -1233,7 +1344,16 @@ async def answer_outbound(request: Request):
     call_uuid = form.get("CallUUID", "unknown")
     name      = request.query_params.get("name", "")
     to_phone  = form.get("To", "")
-    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name}")
+    campaign  = request.query_params.get("campaign", "")
+    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'}")
+
+    # Store for ws_handler (campaign, phone, name all needed before WS opens)
+    _session_meta[call_uuid] = {
+        "direction": "outbound",
+        "to_phone":  to_phone,
+        "campaign":  campaign,
+        "name":      name,
+    }
 
     lead_id = await get_or_create_lead_id(to_phone, name)
     asyncio.create_task(insert_call_log(
@@ -1245,33 +1365,120 @@ async def answer_outbound(request: Request):
         lead_id     = lead_id,
     ))
 
-    greeting  = OUTBOUND_GREETING.format(name=name) if name else INBOUND_GREETING
-    audio_url = await save_audio(greeting, f"greeting_out_{call_uuid}")
-    play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
+    if campaign == "followup_wa":
+        audio_url = f"{BASE_URL}/audio/static/react_followup_wa_hi.wav"
+        # Fire WA immediately — no stream needed for followup
+        asyncio.create_task(_fire_followup_wa(call_uuid, name, to_phone))
+        return PlainTextResponse(
+            f'<?xml version="1.0" encoding="UTF-8"?><Response>'
+            f'<Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
+            f'action="https://voice.thesocialhood.in/recording-done"/>'
+            f'<Play>{audio_url}</Play>'
+            f'<Hangup/>'
+            f'</Response>',
+            media_type="application/xml"
+        )
+    elif campaign == "reactivation":
+        audio_url = f"{BASE_URL}/audio/static/react_greet_main_hi.wav"
+        play_tag = f"<Play>{audio_url}</Play>"
+    else:
+        greeting  = OUTBOUND_GREETING.format(name=name) if name else INBOUND_GREETING
+        audio_url = await save_audio(greeting, f"greeting_out_{call_uuid}")
+        play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
+
     return PlainTextResponse(
-        f'<?xml version="1.0" encoding="UTF-8"?><Response>{play_tag}'
+        f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
+        f'action="https://voice.thesocialhood.in/recording-done"/>'
+        f'{play_tag}'
         f'<Stream keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000" streamTimeout="86400">'
-        f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream></Response>',
+        f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream>'
+        f'</Response>',
         media_type="application/xml"
     )
 
+
+
+@app.get("/recording/{recording_id}")
+async def proxy_recording(recording_id: str):
+    """Proxy Vobiz recording with auth headers so browser can play it."""
+    url = f"https://media.vobiz.ai/v1/Account/{VOBIZ_ACCOUNT}/Recording/{recording_id}.mp3"
+    try:
+        async with httpx.AsyncClient(timeout=30) as c:
+            r = await c.get(url, headers={
+                "X-Auth-ID":    VOBIZ_AUTH_ID,
+                "X-Auth-Token": VOBIZ_AUTH_TOK,
+            })
+        if r.status_code == 200:
+            from fastapi.responses import Response
+            return Response(
+                content=r.content,
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": f"inline; filename={recording_id}.mp3"}
+            )
+        return {"error": f"Vobiz returned {r.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/recording-done")
+async def recording_done(request: Request):
+    """Vobiz calls this when a recording is ready. Save URL to Supabase."""
+    form         = await request.form()
+    all_fields   = dict(form)
+    call_uuid    = form.get("CallUUID", "")
+    logger.info(f"[{call_uuid}] /recording-done full payload: {all_fields}")
+    recording_url = form.get("RecordFile") or form.get("RecordUrl", "")
+    duration     = form.get("RecordingDuration", "0")
+    logger.info(f"[{call_uuid}] Recording ready | url={recording_url} | duration={duration}s")
+
+    if call_uuid and recording_url:
+        try:
+            sb_url = os.getenv("SUPABASE_URL")
+            sb_key = os.getenv("SUPABASE_SERVICE_KEY")
+            hdrs   = {
+                "apikey": sb_key,
+                "Authorization": f"Bearer {sb_key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal"
+            }
+            async with httpx.AsyncClient(timeout=5) as c:
+                await c.patch(
+                    f"{sb_url}/rest/v1/call_logs?call_uuid=eq.{call_uuid}",
+                    headers=hdrs,
+                    json={"recording_url": recording_url, "recording_duration": int(duration)}
+                )
+                await c.patch(
+                    f"{sb_url}/rest/v1/call_summaries?call_uuid=eq.{call_uuid}",
+                    headers=hdrs,
+                    json={"recording_url": recording_url}
+                )
+            logger.info(f"[{call_uuid}] Recording URL saved to Supabase")
+        except Exception as e:
+            logger.error(f"[{call_uuid}] Failed to save recording URL: {e}")
+
+    return PlainTextResponse("OK")
+
 @app.post("/trigger-call")
 async def trigger_call(request: Request):
-    body = await request.json()
-    to   = body.get("to","")
-    name = body.get("name","")
+    body     = await request.json()
+    to       = body.get("to", "")
+    name     = body.get("name", "")
+    campaign = body.get("campaign", "")
     if not to:
         return {"error": "Missing 'to'"}
+
+    campaign_param = f"&campaign={campaign}" if campaign else ""
+    answer_url = f"{BASE_URL}/answer-outbound?name={name}{campaign_param}"
+
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(
             f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/",
             headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK, "Content-Type": "application/json"},
             json={"from": "+919262102426", "to": to,
-                  "answer_url": f"{BASE_URL}/answer-outbound?name={name}",
+                  "answer_url": answer_url,
                   "hangup_url": f"{BASE_URL}/hangup", "hangup_url_method": "POST"}
         )
-    logger.info(f"Trigger call {to} → {r.status_code}")
-    return {"status": "triggered", "to": to, "vobiz": r.json()}
+    logger.info(f"Trigger call {to} campaign={campaign or 'generic'} → {r.status_code}")
+    return {"status": "triggered", "to": to, "campaign": campaign, "vobiz": r.json()}
 
 
 # ─── HANGUP — patched with outbound_leads status update ──────────────────────
@@ -1289,12 +1496,24 @@ async def hangup(request: Request):
 
     session = sessions.get(call_uuid) or CallSession(call_uuid)
 
+    # ── For reactivation/followup_wa: restore campaign context from _session_meta
+    #    so finalize_call writes correct campaign_type, phone, name to call_summaries
+    if not session.campaign:
+        session.campaign       = _meta.get("campaign", "")
+        session.customer_phone = _meta.get("to_phone", "")
+        session.customer_name  = _meta.get("name", "")
+        if session.campaign:
+            logger.info(f"[{call_uuid}] Hangup: restored campaign={session.campaign} from meta")
+
     logger.info(
         f"[{call_uuid}] Session at hangup → "
+        f"campaign={session.campaign} | "
         f"lead={session.lead} | "
         f"state={session.state} | "
+        f"react_state={getattr(session, 'react_state', '-')} | "
         f"turns={session.turn_count} | "
-        f"slots={session.slots}"
+        f"wa_sent={getattr(session, 'wa_sent', False)} | "
+        f"transcript_len={len(getattr(session, 'conversation', []))}"
     )
 
     # Write call summary to Supabase (existing logic — unchanged)
