@@ -102,7 +102,7 @@ async def _generate_one_filler(filler_id: str, lang: str, text: str) -> bool:
     if path.exists():
         return True  # Already exists
 
-    tts_lang, speaker = ("en-IN", "kavya") if lang == "en" else ("hi-IN", "kavya")
+    tts_lang, speaker = ("en-IN", "shreya") if lang == "en" else ("hi-IN", "shreya")
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:

@@ -39,15 +39,15 @@ DYNAMIC_DIR     = CACHE_DIR / "dynamic"
 FILLER_DIR      = CACHE_DIR / "fillers"
 
 TTS_TIMEOUT     = 20  # seconds
-TTS_PACE        = 1.00
+TTS_PACE        = 1.05
 TTS_SAMPLE_RATE = 8000
 TTS_MODEL       = "bulbul:v3"
 
 # ── Voice config per language ─────────────────────────────────────────────────
 VOICE_CONFIG = {
-    "hi":       {"target_language_code": "hi-IN", "speaker": "kavya"},
-    "hinglish": {"target_language_code": "hi-IN", "speaker": "kavya"},
-    "en":       {"target_language_code": "en-IN", "speaker": "kavya"},
+    "hi":       {"target_language_code": "hi-IN", "speaker": "shreya"},
+    "hinglish": {"target_language_code": "hi-IN", "speaker": "shreya"},
+    "en":       {"target_language_code": "en-IN", "speaker": "shreya"},
 }
 
 # ── Static cache: pre-generated responses keyed by source tag ─────────────────

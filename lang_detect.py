@@ -147,12 +147,12 @@ def detect_lang(text: str) -> str:
 def get_tts_language(detected_lang: str) -> tuple:
     """
     Returns (target_language_code, speaker) for Sarvam TTS.
-    "hi"/"hinglish" → hi-IN, kavya
+    "hi"/"hinglish" → hi-IN, shreya
     "en"            → en-IN, meera
     """
     if detected_lang == "en":
         return "en-IN", "meera"
-    return "hi-IN", "kavya"
+    return "hi-IN", "shreya"
 
 
 def format_for_tts(text: str, lang: str) -> str:

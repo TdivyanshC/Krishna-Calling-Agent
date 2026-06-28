@@ -36,6 +36,7 @@ SUPABASE_KEY      = os.getenv("SUPABASE_SERVICE_KEY")   # service_role key
 TENANT_ID         = os.getenv("TENANT_ID", "krishna_furniture")
 WEBHOOK_BASE_URL  = os.getenv("WEBHOOK_BASE_URL", "https://voice.thesocialhood.in")
 CONCURRENCY_LIMIT = int(os.getenv("CONCURRENCY_LIMIT", "2"))
+CAMPAIGN_TYPE     = os.getenv("CAMPAIGN_TYPE", "fresh_lead")   # "reactivation" for reactivation campaign
 
 CALL_START_HOUR = 10   # 10:00 AM IST
 CALL_END_HOUR   = 22   # 10:00 PM IST
@@ -61,6 +62,7 @@ def sb_headers() -> dict:
 async def get_due_leads(client: httpx.AsyncClient, slots: int) -> list[dict]:
     """
     Fetch leads ready to call:
+      - campaign_type matches CAMPAIGN_TYPE env var
       - status = pending OR unanswered
       - next_call_at IS NULL (call ASAP) OR next_call_at <= now()
     Oldest first so no lead waits forever.
@@ -69,6 +71,7 @@ async def get_due_leads(client: httpx.AsyncClient, slots: int) -> list[dict]:
     url = (
         f"{SUPABASE_URL}/rest/v1/outbound_leads"
         f"?tenant_id=eq.{TENANT_ID}"
+        f"&campaign_type=eq.{CAMPAIGN_TYPE}"
         f"&status=in.(pending,unanswered)"
         f"&or=(next_call_at.is.null,next_call_at.lte.{now_iso})"
         f"&order=created_at.asc"
@@ -152,8 +155,9 @@ async def fire_call(client: httpx.AsyncClient, lead: dict) -> bool:
     """
     url  = f"{WEBHOOK_BASE_URL}/trigger-call"
     body = {
-        "to":   lead["phone"],
-        "name": lead.get("name") or "",
+        "to":       lead["phone"],
+        "name":     lead.get("name") or "",
+        "campaign": lead.get("campaign_type") or "",
     }
     try:
         r = await client.post(url, json=body, timeout=15)
@@ -255,6 +259,7 @@ async def main():
     log.info("=" * 55)
     log.info("Outbound Orchestrator started")
     log.info(f"Tenant      : {TENANT_ID}")
+    log.info(f"Campaign    : {CAMPAIGN_TYPE}")
     log.info(f"Concurrency : {CONCURRENCY_LIMIT} simultaneous calls")
     log.info(f"Window      : {CALL_START_HOUR}:00–{CALL_END_HOUR}:00 IST")
     log.info(f"Retry gaps  : 1 day → 2 days → 3 days → DNC")
