@@ -102,7 +102,7 @@ async def fire_whatsapp(session, call_uuid: str) -> bool:
     phone    = getattr(session, "customer_phone", "").replace("+", "").strip()
     name     = getattr(session, "customer_name", "") or "Customer"
     campaign = getattr(session, "campaign", "react_a")
-    payload  = {"phone": phone, "name": name, "offer": "25+25% exchange offer", "campaign": campaign}
+    payload  = {"phone": phone, "name": name, "offer": "25+25% exchange offer", "campaign": "reactivation"}
     try:
         async with httpx.AsyncClient(timeout=8) as client:
             r = await client.post(N8N_WA_URL, json=payload)
@@ -187,21 +187,26 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         if "confusion_who" in intents:
             await play_key(call_uuid, f"{p}_greet_who", session)
             session.react_state = "PRESENT_OFFER"
+            asyncio.create_task(fire_whatsapp(session, call_uuid))
             await play_key(call_uuid, f"{p}_offer_main", session)
             return True
         if "repeat" in intents:
             await play_key(call_uuid, f"{p}_greet_repeat", session)
             session.react_state = "PRESENT_OFFER"
+            asyncio.create_task(fire_whatsapp(session, call_uuid))
             return True
         if "privacy_concern" in intents:
             await play_key(call_uuid, f"{p}_greet_privacy", session)
             session.react_state = "PRESENT_OFFER"
+            asyncio.create_task(fire_whatsapp(session, call_uuid))
             return True
         if "not_interested" in intents:
             await play_key(call_uuid, f"{p}_greet_hostile", session)
             await fire_whatsapp(session, call_uuid)
             return False
+        # Default — fire WA immediately on first response, then present offer
         session.react_state = "PRESENT_OFFER"
+        asyncio.create_task(fire_whatsapp(session, call_uuid))
         await play_key(call_uuid, f"{p}_offer_main", session)
         return True
 
