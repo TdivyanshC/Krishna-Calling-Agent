@@ -1,0 +1,127 @@
+# knowledge_react_abc.py — A/B/C Test Scripts
+# Krishna Furniture Reactivation Campaign
+# campaign_type: react_a | react_b | react_c
+
+REACT_A_SCRIPT = {
+    "ra_greet_main": "Suno, mujhe pata hai aapko ghar ka ek naya look chahiye — toh ab der mat karo. Hum aapka purana furniture bhi achhe rate mein khareed lenge aur naye furniture par bhi heavy discount denge. Aapko pura offer batau?",
+    "ra_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya aapko. Ek khaas offer hai sirf aapke liye.",
+    "ra_greet_repeat": "Haan ji — hum aapka purana furniture achhe rate mein khareed lenge aur naye par heavy discount denge. Matlab ghar ka poora look badal jaata hai aadhe daam mein.",
+    "ra_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi hai. Aap hamare valued customer hain isliye personally call ki.",
+    "ra_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
+    "ra_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Matlab aadhe daam mein bilkul naya latest furniture ghar mein. Yeh offer sirf is mahine tak hai aur limited pieces hain.",
+    "ra_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Koi hidden condition nahi hai.",
+    "ra_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Sector 14 Gurgaon, Delhi, Noida — teeno jagah hain hamare showrooms.",
+    "ra_offer_urgency": "Yeh offer sirf is mahine tak hai aur pieces limited hain. Jo pehle aaya usne le liya. WhatsApp par details check karo pehle — phir decide karo.",
+    "ra_obj_not_interested": "Ek baar WhatsApp par dekh lena — sirf photos aur price list. Koi pressure nahi hai. Offer is mahine tak valid hai.",
+    "ra_obj_busy": "Bilkul, disturb nahi karti. Details WhatsApp par hain — apni fursad mein dekh lena.",
+    "ra_obj_expensive": "Isliye toh yeh exchange offer hai — new price par nahi, exchange ke saath. Exact amount WhatsApp par dekh sakte ho.",
+    "ra_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Hamare paas factory price hai plus exchange value — total comparison WhatsApp par hai.",
+    "ra_obj_think": "Zaroor socho — but offer is mahine tak hi hai. WhatsApp par details reh jaaye, jab decide karo tab kaam aayegi.",
+    "ra_obj_recovery": "Sach bolunga — jo families yeh offer leke gayi hain wo bahut khush hain. Aadhe daam mein ghar ka poora look badal jaata hai. Aap bhi iska fayda uthao.",
+    "ra_hook_cta": "Der mat karo — yeh offer limited time ke liye hai. Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon.",
+    "ra_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna.",
+    "ra_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
+    "ra_close_conviction": "Ab der mat karo — pieces limited hain. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
+    "ra_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
+    "ra_filler_1": "Jee...", "ra_filler_2": "Haan...", "ra_filler_3": "Bilkul...",
+    "ra_filler_4": "Achha...", "ra_filler_5": "Samajh gayi...", "ra_filler_6": "Haan jee...",
+}
+
+REACT_B_SCRIPT = {
+    "rb_greet_main": "Soniya ji ne toh poora ghar badal liya — naya sofa, naya bed, sab kuch — sirf 25,000 mein. Unka purana furniture hum le gaye, naya de diya. Next maine aapko call kiya hai — aapko bhi yahi offer chahiye?",
+    "rb_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya. Soniya ji jaisi bahut families is mahine ghar badal rahi hain — aapke liye bhi yahi offer leke aayi hoon.",
+    "rb_greet_repeat": "Haan ji — Soniya ji ne sirf 25,000 mein poora ghar badal liya. Purana furniture hum le gaye, naya de diya. Aapko bhi yahi offer dene ke liye call ki hai.",
+    "rb_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi. Aap hamare valued customer hain isliye personally call ki.",
+    "rb_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
+    "rb_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Soniya ji jaisi jo bhi families aayi hain — sab ne wohi din naya furniture le ke gaye. Yeh offer sirf is mahine tak hai.",
+    "rb_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Soniya ji ne bhi yahi kiya tha — wohi din le ke gayi thi.",
+    "rb_offer_trust": "Samajh sakti hoon. Soniya ji bhi pehle hesitate kar rahi thi — phir showroom aayi, apne saamne value calculate karwaayi, aur le gayi. Aap bhi ek baar aa ke dekho — koi commitment nahi.",
+    "rb_offer_urgency": "Is mahine bahut families aa rahi hain — pieces limited hain. Soniya ji ne last minute mein decide kiya tha aur barely mila tha. Aap der mat karo.",
+    "rb_obj_not_interested": "Soniya ji ne bhi pehle yahi kaha tha. Phir WhatsApp par photos dekhe, showroom aayi — aur wohi din le gayi. Ek baar WhatsApp par dekh lena bas.",
+    "rb_obj_busy": "Bilkul, disturb nahi karti. Details WhatsApp par bhej deti hoon — jab time mile tab dekh lena. Offer is mahine tak valid hai.",
+    "rb_obj_expensive": "Isliye toh exchange offer hai — Soniya ji ne bhi yahi socha tha. Phir exact amount dekha toh realize hua kitna fayda ho raha hai. WhatsApp par calculation dekh lena.",
+    "rb_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Yahan factory price hai plus exchange value — Soniya ji ne compare kiya tha, yahan hi better deal mila.",
+    "rb_obj_think": "Zaroor socho — Soniya ji ne bhi socha tha. But offer is mahine tak hi hai. WhatsApp details reh jaaye — jab decide karo tab kaam aayegi.",
+    "rb_obj_recovery": "Sach bolunga — Soniya ji ne bhi last moment mein decide kiya. Ab wo bahut khush hain. Aap bhi ek baar showroom aao — free mein value estimate ho jaati hai.",
+    "rb_hook_cta": "Soniya ji jaisi bahut families yeh offer le rahi hain is mahine. Aap miss mat karo — main abhi WhatsApp par sab bhej rahi hoon.",
+    "rb_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Soniya ji ne bhi yahi dekha tha pehle — phir showroom aayi. Ek baar dekh lena.",
+    "rb_close": "Bilkul sahi decision hai. Soniya ji ki tarah aap bhi ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
+    "rb_close_conviction": "Soniya ji ne bhi pehle socha tha baad mein dekhenge — phir showroom aayi, dekha, aur usi din le gayi. Aap bhi ek baar aao — purana hum le lenge, naya aap chunna. Bahut shukriya!",
+    "rb_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
+    "rb_filler_1": "Jee...", "rb_filler_2": "Haan...", "rb_filler_3": "Bilkul...",
+    "rb_filler_4": "Achha...", "rb_filler_5": "Samajh gayi...", "rb_filler_6": "Haan jee...",
+}
+
+REACT_C_SCRIPT = {
+    "rc_greet_main": "Sach batana please — agar aapko naya furniture mil jaaye aur purana bhi achhe rate mein chala jaaye, sab aadhe daam mein — toh aap sunna chahenge? Kyunki abhi exactly yahi ho raha hai.",
+    "rc_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya. Ek sawaal poochha tha — agar naya furniture aadhe daam mein mile toh sunenge?",
+    "rc_greet_repeat": "Haan ji — main pooch rahi thi, agar aapko naya furniture mile aur purana bhi achhe rate mein chala jaaye — aadhe daam mein — toh aap sunna chahenge?",
+    "rc_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi. Aap hamare valued customer hain isliye personally call ki.",
+    "rc_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
+    "rc_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Matlab aadhe daam mein bilkul naya latest furniture ghar mein. Yeh offer sirf apne purane customers ko de rahe hain — bahar ke logo ko nahi milta.",
+    "rc_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Free mein value estimate ho jaati hai — koi commitment nahi.",
+    "rc_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Free mein furniture ki value estimate ho jaati hai. Sirf ek baar aao toh sahi.",
+    "rc_offer_urgency": "Yeh offer sirf apne purane customers ke liye hai — aur is mahine tak hi valid hai. Jo pehle aaya usne le liya. Aap der mat karo.",
+    "rc_obj_not_interested": "Koi baat nahi — main force nahi kar rahi. Bas ek baar WhatsApp par photos dekh lena. Offer is mahine tak valid hai — decision aap ka hai.",
+    "rc_obj_busy": "Bilkul, disturb nahi karti. Details WhatsApp par bhej deti hoon — apni fursad mein dekh lena.",
+    "rc_obj_expensive": "Isliye toh yeh exchange offer hai — new price par nahi, exchange ke saath. Exact amount WhatsApp par dekh sakte ho. Free mein estimate bhi ho jaati hai showroom mein.",
+    "rc_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Hamare paas factory price hai plus exchange value — total comparison WhatsApp par hai.",
+    "rc_obj_think": "Zaroor socho — main force nahi kar rahi. But offer is mahine tak hi hai. WhatsApp details reh jaaye — jab decide karo tab kaam aayegi.",
+    "rc_obj_recovery": "Dekho, maine aapko force nahi karna. Bas ek baar WhatsApp dekho, showroom aao — free mein furniture ki value estimate ho jaati hai. Koi commitment nahi. Aao toh sahi.",
+    "rc_hook_cta": "Yeh offer sirf hamare purane customers ke liye hai — bahar ke logo ko nahi milta. Aap special hain isliye personally call ki. Main abhi WhatsApp par sab bhej rahi hoon.",
+    "rc_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna. Koi commitment nahi.",
+    "rc_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — free mein value estimate ho jaayegi. Purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
+    "rc_close_conviction": "Dekho — maine aapko force nahi kiya. Aap khud soch ke aaye. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
+    "rc_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
+    "rc_filler_1": "Jee...", "rc_filler_2": "Haan...", "rc_filler_3": "Bilkul...",
+    "rc_filler_4": "Achha...", "rc_filler_5": "Samajh gayi...", "rc_filler_6": "Haan jee...",
+}
+
+ALL_SCRIPTS = {
+    "react_a": REACT_A_SCRIPT,
+    "react_b": REACT_B_SCRIPT,
+    "react_c": REACT_C_SCRIPT,
+}
+
+def get_script(campaign: str) -> dict:
+    return ALL_SCRIPTS.get(campaign, REACT_A_SCRIPT)
+
+def get_prefix(campaign: str) -> str:
+    return {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
+
+REACT_ABC_INTENTS = {
+    "positive": ["haan", "han", "haa", "theek hai", "batao", "bolo", "sun raha hoon",
+                 "okay", "ok", "sure", "bilkul", "achha", "bataiye", "sunenge", "ji",
+                 "जी", "हाँ", "हां", "ठीक है", "बताओ", "बोलो", "अच्छा", "बिल्कुल"],
+    "confusion_who": ["kaun", "kahan se", "kon ho", "pahchaan nahi", "kaun sa number",
+                      "kaise mila", "number kahan se", "कौन", "कहाँ से", "पहचान नहीं"],
+    "repeat": ["kya", "kya bola", "phir se bolo", "samjha nahi", "dobara bolo",
+               "suna nahi", "क्या", "क्या बोला", "फिर से", "समझा नहीं"],
+    "privacy_concern": ["number kaise mila", "data kahan se", "mera number kyun hai", "spam", "privacy"],
+    "offer_clarify": ["kya offer", "kaise hoga", "explain karo", "samjhao",
+                      "exchange kaise", "purana furniture", "kya matlab",
+                      "detail batao", "aur batao", "एक्सचेंज कैसे", "exchange kaisa"],
+    "trust_issue": ["fake hai", "jhooth", "fraud", "scam", "sach mein",
+                    "pakka", "sach hai kya", "vishwas nahi"],
+    "buying_signal": ["kitna time hai", "kab tak hai", "interested hoon",
+                      "showroom kab", "aana chahta", "visit karna", "kab aaye"],
+    "wa_ok": ["bhejo", "send karo", "bhej do", "kar do", "theek hai bhej do",
+              "ok send", "haan bhejo", "ठीक है", "okay", "haan", "हाँ",
+              "bilkul", "sure", "done", "ji", "जी", "achha", "अच्छा"],
+    "wa_no_whatsapp": ["whatsapp nahi hai", "use nahi karta", "no whatsapp"],
+    "wa_diff_number": ["alag number", "doosra number", "different number"],
+    "wa_prefers": ["whatsapp pe hi", "call nahi", "message karo"],
+    "busy": ["busy hoon", "abhi nahi", "kaam mein hoon", "baad mein", "driving",
+             "meeting mein", "abhi nahi kar sakta"],
+    "not_interested": ["interested nahi", "nahi chahiye", "rehne do",
+                       "hata do mera number", "band karo", "mat bhejo"],
+    "expensive": ["mahenga hai", "bahut zyada", "budget nahi", "afford nahi", "costly"],
+    "online_cheaper": ["online sasta", "amazon pe", "flipkart pe", "online better"],
+    "sochna_hai": ["sochna hai", "soch ke batata hoon", "wife se puchna",
+                   "family se puchna", "decide nahi kiya"],
+    "escalate": ["manager se baat", "senior se milao", "complaint karna"],
+    "dnc": ["dobara call mat karna", "number delete karo", "DNC", "harassment",
+            "complaint karunga", "call mat karo kabhi", "band karo yeh call"],
+    "personal_question": ["tumhara naam", "kaun ho tum", "real hai ya bot",
+                          "robot ho", "AI ho", "human ho"],
+}

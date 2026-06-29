@@ -27,6 +27,22 @@ from supabase_calling import insert_call_log, finalize_call, get_or_create_lead_
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# ── Persistent HTTP client for Vobiz Play API ────────────────────────────────
+_vobiz_http_client: "httpx.AsyncClient | None" = None
+_sarvam_http_client: "httpx.AsyncClient | None" = None
+
+async def _get_sarvam_client() -> "httpx.AsyncClient":
+    global _sarvam_http_client
+    if _sarvam_http_client is None or _sarvam_http_client.is_closed:
+        _sarvam_http_client = httpx.AsyncClient(timeout=15)
+    return _sarvam_http_client
+
+async def _get_vobiz_client() -> "httpx.AsyncClient":
+    global _vobiz_http_client
+    if _vobiz_http_client is None or _vobiz_http_client.is_closed:
+        _vobiz_http_client = httpx.AsyncClient(timeout=8)
+    return _vobiz_http_client
+
 # ── Upgrade: Language-aware TTS + filler system ───────────────────────────────
 from contextlib import asynccontextmanager
 from lang_detect import detect_lang, get_lang_instruction
@@ -505,8 +521,8 @@ def ulaw_to_wav(ulaw_bytes: bytes) -> bytes:
 # ─── STT ─────────────────────────────────────────────────────────────────────
 async def transcribe(wav_bytes: bytes) -> str:
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(
+        client = await _get_sarvam_client()
+        r = await client.post(
                 "https://api.sarvam.ai/speech-to-text",
                 headers={"API-Subscription-Key": SARVAM_API_KEY},
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
@@ -945,17 +961,25 @@ async def _fire_followup_wa(call_uuid: str, name: str, phone: str):
 
 async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
+        client = await _get_vobiz_client()
+        r = await asyncio.wait_for(
+            client.post(
                 f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/Play/",
                 headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK,
                          "Content-Type": "application/json"},
                 json={"urls": [audio_url], "legs": "aleg", "mix": False}
-            )
+            ),
+            timeout=1.5
+        )
         logger.info(f"[{call_uuid}] Play → {r.status_code} | {audio_url}")
         return r.status_code in (200, 202)
+    except asyncio.TimeoutError:
+        logger.info(f"[{call_uuid}] Play SENT (timeout ok) → {audio_url}")
+        return True
     except Exception as e:
         logger.error(f"[{call_uuid}] play_audio_url error: {e}")
+        global _vobiz_http_client
+        _vobiz_http_client = None
         return False
 
 
@@ -982,7 +1006,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 except Exception as he:
                     logger.error(f"[{call_uuid}] Followup hangup error: {he}")
             return
-        if session.campaign == "reactivation":
+        if session.campaign in ("reactivation", "react_a", "react_b", "react_c"):
             from webhook_reactivation import handle_reactivation_turn, play_key
             # Play filler instantly so customer hears response start
             import random
@@ -1243,6 +1267,7 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
                     if session.barge_frames == BARGE_IN_FRAMES and session.is_priya_speaking:
                         asyncio.create_task(stop_audio(call_uuid))
                     if should_process and not session.is_processing:
+                        logger.info(f"[{call_uuid}] Audio ready → sending to STT")
                         asyncio.create_task(respond(websocket, session, audio, call_uuid))
             except (json.JSONDecodeError, KeyError):
                 pass
@@ -1378,8 +1403,10 @@ async def answer_outbound(request: Request):
             f'</Response>',
             media_type="application/xml"
         )
-    elif campaign == "reactivation":
-        audio_url = f"{BASE_URL}/audio/static/react_greet_main_hi.wav"
+    elif campaign in ("reactivation", "react_a", "react_b", "react_c"):
+        prefix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
+        greet_key = f"{prefix}_greet_main" if campaign in ("react_a", "react_b", "react_c") else "react_greet_main"
+        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
         play_tag = f"<Play>{audio_url}</Play>"
     else:
         greeting  = OUTBOUND_GREETING.format(name=name) if name else INBOUND_GREETING
