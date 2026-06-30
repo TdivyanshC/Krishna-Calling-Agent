@@ -260,13 +260,8 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             await fire_whatsapp(session, call_uuid)
             return True
         await play_key(call_uuid, f"{p}_hook_cta", session)
-        if p == "ra":
-            asyncio.create_task(fire_whatsapp(session, call_uuid))
-            session.react_state = "APPOINTMENT"
-            await play_key(call_uuid, "shared_appointment_ask", session)
-        else:
-            session.react_state = "WHATSAPP_CTA"
-            await play_key(call_uuid, f"{p}_wa_cta", session, log_transcript=False)
+        asyncio.create_task(fire_whatsapp(session, call_uuid))
+        session.react_state = "WHATSAPP_CTA"
         return True
 
     # ── WHATSAPP_CTA ──────────────────────────────────────────────────────────
@@ -338,7 +333,8 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         # since we are explicitly in the APPOINTMENT state asking for a date.
         # Plain "haan"/"positive" alone is NOT enough to confirm an appointment.
         _has_digit = any(ch.isdigit() for ch in t)
-        if "appointment_confirm" in intents or _has_digit:
+        _has_day_suffix = "डे" in t and len(t.split()) >= 2
+        if "appointment_confirm" in intents or _has_digit or _has_day_suffix:
             # HOT LEAD — appointment confirmed
             session.appointment_confirmed = True
             session.lead_tier_override = "hot"
@@ -347,10 +343,10 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             await play_key(call_uuid, "shared_appointment_confirmed", session)
             await asyncio.sleep(3.0)
             return False
-        # Unclear response — gently re-ask once
+        # Unclear response — acknowledge + re-ask once with a different line
         if not getattr(session, "appt_reask_tried", False):
             session.appt_reask_tried = True
-            await play_key(call_uuid, "shared_appointment_ask", session, log_transcript=False)
+            await play_key(call_uuid, "shared_appointment_reask", session, log_transcript=False)
             return True
         session.react_state = "CLOSE"
         await play_key(call_uuid, f"{p}_close", session)
