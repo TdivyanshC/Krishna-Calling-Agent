@@ -182,7 +182,7 @@ def correct_stt(text: str) -> str:
 SILENCE_THRESHOLD = 400
 MIN_SPEECH_FRAMES = 6    # 120ms minimum — filters out clicks and noise
 TRAILING_SILENCE  = 18   # 360ms — enough for natural mid-sentence pauses
-BARGE_IN_FRAMES   = 4
+BARGE_IN_FRAMES   = 10  # raised from 4 — reduces false barge-in triggers from echo/noise on longer reactivation lines
 SAMPLE_RATE       = 8000
 
 # ═════════════════════════════════════════════════════════════════════════════
