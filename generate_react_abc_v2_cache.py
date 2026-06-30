@@ -24,13 +24,11 @@ SPEAKER_MAP = {
     "shared": "shreya",
 }
 
-# Keys whose text changed — always force-regenerate, even if cached file exists
-FORCE_REGEN = {
-    "ra_greet_main", "ra_offer_main", "ra_hook_cta",
-    "rb_greet_main", "rb_offer_main", "rb_hook_cta",
-    "rc_greet_main", "rc_offer_main", "rc_hook_cta",
-    "shared_appointment_ask", "shared_appointment_confirmed",
-}
+# FORCE_REGEN_ALL = True means every non-filler key gets regenerated on the
+# correct per-plan voice, regardless of whether its text changed. Necessary
+# because changing the voice mapping affects ALL keys, not just edited ones.
+FORCE_REGEN_ALL = True
+FORCE_REGEN = set()  # unused when FORCE_REGEN_ALL is True
 
 # Keys removed from scripts — delete stale audio if present
 DELETED_KEYS = {"ra_wa_cta", "rc_close_conviction"}
@@ -48,10 +46,10 @@ def _is_filler(key: str) -> bool:
 
 async def generate_wav(key: str, text: str) -> bool:
     out_path = os.path.join(STATIC_DIR, f"{key}_hi.wav")
-    if key not in FORCE_REGEN and os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
+    if not FORCE_REGEN_ALL and key not in FORCE_REGEN and os.path.exists(out_path) and os.path.getsize(out_path) > 1000:
         print(f"  SKIP (cached) → {key}")
         return True
-    if key in FORCE_REGEN and os.path.exists(out_path):
+    if (FORCE_REGEN_ALL or key in FORCE_REGEN) and os.path.exists(out_path):
         os.remove(out_path)
         print(f"  DELETED stale → {key}_hi.wav")
     speaker = _speaker_for(key)
