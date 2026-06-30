@@ -10,7 +10,7 @@ import os
 
 import httpx
 
-from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix
+from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_SCRIPT, SHARED_INTENTS
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,9 @@ async def _vobiz_play(call_uuid: str, audio_url: str) -> bool:
 async def play_key(call_uuid: str, key: str, session=None, log_transcript: bool = True) -> bool:
     campaign = getattr(session, "campaign", "react_a") if session else "react_a"
     script   = get_script(campaign)
+    # Shared keys (appointment/Q&A) live in SHARED_SCRIPT, not the plan script
+    if key.startswith("shared_"):
+        script = SHARED_SCRIPT
 
     if session is not None and log_transcript:
         if not hasattr(session, "conversation"):
@@ -123,6 +126,10 @@ def detect_intents(transcript: str) -> list[str]:
     for intent, keywords in REACT_ABC_INTENTS.items():
         if intent == "dnc":
             continue
+        if keywords and any(kw.lower() in t for kw in keywords):
+            matched.append(intent)
+    # Also check shared intents (appointment / Q&A)
+    for intent, keywords in SHARED_INTENTS.items():
         if keywords and any(kw.lower() in t for kw in keywords):
             matched.append(intent)
     return matched
@@ -194,6 +201,7 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             await play_key(call_uuid, f"{p}_greet_repeat", session)
             session.react_state = "PRESENT_OFFER"
             asyncio.create_task(fire_whatsapp(session, call_uuid))
+            await play_key(call_uuid, f"{p}_offer_main", session, log_transcript=False)
             return True
         if "privacy_concern" in intents:
             await play_key(call_uuid, f"{p}_greet_privacy", session)
@@ -271,10 +279,68 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             session.react_state = "CLOSE"
             await play_key(call_uuid, f"{p}_close", session)
             return False
+        # Any question about who/location/name/valuation/delivery → answer + move to APPOINTMENT
+        qa_keys = {
+            "confusion_who": f"{p}_greet_who",
+            "ask_location":  "shared_q_location",
+            "ask_timings":   "shared_q_location",
+            "ask_name":      "shared_q_name",
+            "ask_valuation": "shared_q_valuation",
+            "ask_delivery":  "shared_q_valuation",
+        }
+        for intent_name, shared_key in qa_keys.items():
+            if intent_name in intents:
+                session.interest_signals = getattr(session, "interest_signals", 0) + 1
+                await play_key(call_uuid, shared_key, session)
+                session.react_state = "APPOINTMENT"
+                await play_key(call_uuid, "shared_appointment_ask", session, log_transcript=False)
+                await fire_whatsapp(session, call_uuid)
+                return True
+        # Default: positive engagement → fire WA, move to APPOINTMENT, ask
         await fire_whatsapp(session, call_uuid)
+        session.interest_signals = getattr(session, "interest_signals", 0) + 1
+        session.react_state = "APPOINTMENT"
+        await play_key(call_uuid, "shared_appointment_ask", session)
+        return True
+
+    # ── APPOINTMENT ───────────────────────────────────────────────────────────
+    if state == "APPOINTMENT":
+        # Any question still gets answered FIRST, then re-ask for date (before any confirm check)
+        qa_keys = {
+            "confusion_who": f"{p}_greet_who",
+            "ask_location":  "shared_q_location",
+            "ask_timings":   "shared_q_location",
+            "ask_name":      "shared_q_name",
+            "ask_valuation": "shared_q_valuation",
+            "ask_delivery":  "shared_q_valuation",
+        }
+        for intent_name, shared_key in qa_keys.items():
+            if intent_name in intents:
+                await play_key(call_uuid, shared_key, session)
+                await play_key(call_uuid, "shared_appointment_ask", session, log_transcript=False)
+                return True
+        if "not_interested" in intents or "busy" in intents:
+            session.react_state = "CLOSE"
+            await play_key(call_uuid, f"{p}_close", session)
+            return False
+        # Only treat as confirmation if a concrete date/day keyword was used —
+        # plain "haan"/"positive" alone is NOT enough to confirm an appointment
+        if "appointment_confirm" in intents:
+            # HOT LEAD — appointment confirmed
+            session.appointment_confirmed = True
+            session.lead_tier_override = "hot"
+            session.lead_score_override = 85
+            session.react_state = "CLOSE"
+            await play_key(call_uuid, "shared_appointment_confirmed", session)
+            await asyncio.sleep(3.0)
+            return False
+        # Unclear response — gently re-ask once
+        if not getattr(session, "appt_reask_tried", False):
+            session.appt_reask_tried = True
+            await play_key(call_uuid, "shared_appointment_ask", session, log_transcript=False)
+            return True
         session.react_state = "CLOSE"
-        await play_key(call_uuid, f"{p}_close_conviction", session)
-        await asyncio.sleep(7.0)
+        await play_key(call_uuid, f"{p}_close", session)
         return False
 
     # ── CLOSE ─────────────────────────────────────────────────────────────────

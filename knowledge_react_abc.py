@@ -3,12 +3,12 @@
 # campaign_type: react_a | react_b | react_c
 
 REACT_A_SCRIPT = {
-    "ra_greet_main": "Suno, mujhe pata hai aapko ghar ka ek naya look chahiye — toh ab der mat karo. Hum aapka purana furniture bhi achhe rate mein khareed lenge aur naye furniture par bhi heavy discount denge. Aapko pura offer batau?",
+    "ra_greet_main": "Suno, abb aap apne ghar ko naya look de sakte ho bahut easily. Hum aapka purana furniture bhi achhe rate mein khareed lenge aur naye furniture par bhi heavy discount denge. Aapko pura offer batau?",
     "ra_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya aapko. Ek khaas offer hai sirf aapke liye.",
     "ra_greet_repeat": "Haan ji — hum aapka purana furniture achhe rate mein khareed lenge aur naye par heavy discount denge. Matlab ghar ka poora look badal jaata hai aadhe daam mein.",
     "ra_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi hai. Aap hamare valued customer hain isliye personally call ki.",
     "ra_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
-    "ra_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Matlab aadhe daam mein bilkul naya latest furniture ghar mein. Yeh offer sirf is mahine tak hai aur limited pieces hain.",
+    "ra_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Matlab aadhe daam mein bilkul naya latest furniture ghar mein. Aur aapko ek baat batau?",
     "ra_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Koi hidden condition nahi hai.",
     "ra_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Sector 14 Gurgaon, Delhi, Noida — teeno jagah hain hamare showrooms.",
     "ra_offer_urgency": "Yeh offer sirf is mahine tak hai aur pieces limited hain. Jo pehle aaya usne le liya. WhatsApp par details check karo pehle — phir decide karo.",
@@ -18,7 +18,7 @@ REACT_A_SCRIPT = {
     "ra_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Hamare paas factory price hai plus exchange value — total comparison WhatsApp par hai.",
     "ra_obj_think": "Zaroor socho — but offer is mahine tak hi hai. WhatsApp par details reh jaaye, jab decide karo tab kaam aayegi.",
     "ra_obj_recovery": "Sach bolunga — jo families yeh offer leke gayi hain wo bahut khush hain. Aadhe daam mein ghar ka poora look badal jaata hai. Aap bhi iska fayda uthao.",
-    "ra_hook_cta": "Der mat karo — yeh offer limited time ke liye hai. Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon.",
+    "ra_hook_cta": "Aap hamare purane customer ho isliye aapko call kari maine, aap der mat karo, showroom mein aao hum wahi baat karenge aur details aapko WhatsApp par bhi bhej di hain, wahan bhi aap mujhse baat kar sakte ho.",
     "ra_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna.",
     "ra_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "ra_close_conviction": "Ab der mat karo — pieces limited hain. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
@@ -88,6 +88,56 @@ def get_script(campaign: str) -> dict:
 
 def get_prefix(campaign: str) -> str:
     return {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SHARED — Appointment booking + common questions (used by all 3 plans)
+# ─────────────────────────────────────────────────────────────────────────────
+SHARED_SCRIPT = {
+    "shared_q_location":
+        "Hamare showrooms Sector 14 Gurgaon, Delhi, aur Noida mein hain — "
+        "Monday se Sunday, subah 10 baje se raat 8 baje tak khule rehte hain.",
+
+    "shared_q_name":
+        "Mera naam Priya hai — main Krishna Furniture ki taraf se baat kar rahi hoon.",
+
+    "shared_q_valuation":
+        "Bahut simple hai — hamari team aapke ghar aakar purana furniture dekh kar "
+        "uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
+
+    "shared_appointment_ask":
+        "Main aapka appointment book kar deti hoon, hamari team visit kar legi — "
+        "aapko koi takleef nahi hogi poore process mein. Aap date bata do mujhe please.",
+
+    "shared_appointment_confirmed":
+        "Ji badiya, main aapka wait karungi, jaldi milte hain!",
+}
+
+SHARED_INTENTS = {
+    "ask_location": ["kahan hai", "showroom kahan", "location kya", "address batao",
+                     "kaha hai showroom", "kahan par hai", "kaunsi jagah",
+                     "कहां है", "कहाँ है", "शोरूम कहां", "लोकेशन क्या", "एड्रेस बताओ",
+                     "कहां पर है", "कहाँ पर है", "स्टोर कहां", "स्टोर कहाँ", "कौनसी जगह",
+                     "दुकान कहां", "shop kahan", "store kahan", "showroom kaha"],
+    "ask_name": ["tumhara naam", "aapka naam", "naam kya hai", "kaun bol rahe ho",
+                "तुम्हारा नाम", "आपका नाम", "नाम क्या है", "कौन बोल रहे हो", "कौन बोल रही हो"],
+    "ask_timings": ["time kya", "kab khulta", "timing kya hai", "kitne baje khulta",
+                    "टाइम क्या", "कब खुलता", "टाइमिंग क्या है", "कितने बजे खुलता"],
+    "ask_valuation": ["valuation kaise", "purana furniture kaise", "kaise pickup",
+                      "value kaise milegi", "kaise calculate", "kaise lenge purana",
+                      "वैल्यूएशन कैसे", "पुराना फर्नीचर कैसे", "कैसे पिकअप", "वैल्यू कैसे मिलेगी",
+                      "कैसे कैलकुलेट", "कैसे लेंगे पुराना"],
+    "ask_delivery": ["delivery kab", "kab milega", "kitne din mein", "delivery kaise",
+                     "डिलीवरी कब", "कब मिलेगा", "कितने दिन में", "डिलीवरी कैसे"],
+    "appointment_confirm": ["kal", "parso", "monday", "tuesday", "wednesday", "thursday",
+                            "friday", "saturday", "sunday", "subah", "shaam", "raat",
+                            "baje", "tareek", "date", "theek hai aa jaunga", "main aaunga",
+                            "book kardo", "haan book karo", "confirm hai", "ji confirm",
+                            "कल", "परसों", "सोमवार", "मंगलवार", "बुधवार", "गुरुवार",
+                            "शुक्रवार", "शनिवार", "रविवार", "सुबह", "शाम", "रात", "बजे",
+                            "तारीख", "ठीक है आ जाऊंगा", "मैं आऊंगा", "बुक कर दो",
+                            "हां बुक करो", "कन्फर्म है", "जी कन्फर्म"],
+}
 
 REACT_ABC_INTENTS = {
     "positive": ["haan", "han", "haa", "theek hai", "batao", "bolo", "sun raha hoon",

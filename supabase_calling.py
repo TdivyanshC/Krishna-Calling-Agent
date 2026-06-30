@@ -1,3 +1,4 @@
+import asyncio
 # ─────────────────────────────────────────────────────────────────
 # supabase_calling.py
 # Drop this file into /home/voiceagent/voice-ai/
@@ -402,9 +403,13 @@ async def finalize_call(
         budget_numeric    = None
 
     intents_fired = set(getattr(session, "intents_fired", []))
-    # Use reactivation scoring for reactivation campaign
-    if getattr(session, "campaign", "") == "reactivation":
+    # Use reactivation scoring for reactivation campaign (incl. A/B/C test plans)
+    if getattr(session, "campaign", "") in ("reactivation", "react_a", "react_b", "react_c"):
         score, tier = _compute_reactivation_score(session)
+        # Appointment confirmed → hard override to HOT regardless of computed score
+        if getattr(session, "lead_score_override", None) is not None:
+            score = session.lead_score_override
+            tier  = getattr(session, "lead_tier_override", tier)
         score_breakdown = {}
     else:
         score, score_breakdown = _compute_score_from_normalized(
