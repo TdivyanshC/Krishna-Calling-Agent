@@ -22,8 +22,14 @@ REACT_A_SCRIPT = {
     "ra_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "ra_close_conviction": "Ab der mat karo — pieces limited hain. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
     "ra_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
-    "ra_filler_1": "Jee...", "ra_filler_2": "Haan...", "ra_filler_3": "Bilkul...",
-    "ra_filler_4": "Achha...", "ra_filler_5": "Samajh gayi...", "ra_filler_6": "Haan jee...",
+    "ra_q_location": "Hamare showrooms Sector 14 Gurgaon, Delhi, aur Noida mein hain — Monday se Sunday, subah 10 baje se raat 8 baje tak khule rehte hain.",
+    "ra_q_name": "Mera naam Priya hai — main Krishna Furniture ki taraf se baat kar rahi hoon.",
+    "ra_q_valuation": "Bahut simple hai — hamari team aapke ghar aakar purana furniture dekh kar uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
+    "ra_appointment_ask": "Main aapke liye free valuation visit book kar deti hoon. Hamari team aa kar furniture dekh legi, value bata degi, uske baad hi aap decide kariyega. Kaunsi date convenient rahegi?",
+    "ra_appointment_confirmed": "Bahut badiya ji. Main appointment confirm kar deti hoon. Hamari team time par pahunch jayegi. Jaldi milte hain!",
+    "ra_appointment_reask": "Maaf kijiye, samajh nahi aaya. Aap phir se date bata sakte hain please?",
+    "ra_filler_1": "Haan...", "ra_filler_2": "Ji haan...", "ra_filler_3": "Bilkul...",
+    "ra_filler_4": "Achha...", "ra_filler_5": "Samajh gayi...", "ra_filler_6": "Theek hai...",
 }
 
 REACT_B_SCRIPT = {
@@ -47,8 +53,14 @@ REACT_B_SCRIPT = {
     "rb_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "rb_close_conviction": "Bahut sahi decision hai. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
     "rb_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
-    "rb_filler_1": "Jee...", "rb_filler_2": "Haan...", "rb_filler_3": "Bilkul...",
-    "rb_filler_4": "Achha...", "rb_filler_5": "Samajh gayi...", "rb_filler_6": "Haan jee...",
+    "rb_q_location": "Hamare showrooms Sector 14 Gurgaon, Delhi, aur Noida mein hain — Monday se Sunday, subah 10 baje se raat 8 baje tak khule rehte hain.",
+    "rb_q_name": "Mera naam Priya hai — main Krishna Furniture ki taraf se baat kar rahi hoon.",
+    "rb_q_valuation": "Bahut simple hai — hamari team aapke ghar aakar purana furniture dekh kar uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
+    "rb_appointment_ask": "Main aapke liye free valuation visit book kar deti hoon. Hamari team aa kar furniture dekh legi, value bata degi, uske baad hi aap decide kariyega. Kaunsi date convenient rahegi?",
+    "rb_appointment_confirmed": "Bahut badiya ji. Main appointment confirm kar deti hoon. Hamari team time par pahunch jayegi. Jaldi milte hain!",
+    "rb_appointment_reask": "Maaf kijiye, samajh nahi aaya. Aap phir se date bata sakte hain please?",
+    "rb_filler_1": "Haan...", "rb_filler_2": "Ji haan...", "rb_filler_3": "Bilkul...",
+    "rb_filler_4": "Achha...", "rb_filler_5": "Samajh gayi...", "rb_filler_6": "Theek hai...",
 }
 
 REACT_C_SCRIPT = {
@@ -71,8 +83,14 @@ REACT_C_SCRIPT = {
     "rc_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna. Koi commitment nahi.",
     "rc_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — free mein value estimate ho jaayegi. Purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "rc_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
-    "rc_filler_1": "Jee...", "rc_filler_2": "Haan...", "rc_filler_3": "Bilkul...",
-    "rc_filler_4": "Achha...", "rc_filler_5": "Samajh gayi...", "rc_filler_6": "Haan jee...",
+    "rc_q_location": "Hamare showrooms Sector 14 Gurgaon, Delhi, aur Noida mein hain — Monday se Sunday, subah 10 baje se raat 8 baje tak khule rehte hain.",
+    "rc_q_name": "Mera naam Priya hai — main Krishna Furniture ki taraf se baat kar rahi hoon.",
+    "rc_q_valuation": "Bahut simple hai — hamari team aapke ghar aakar purana furniture dekh kar uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
+    "rc_appointment_ask": "Main aapke liye free valuation visit book kar deti hoon. Hamari team aa kar furniture dekh legi, value bata degi, uske baad hi aap decide kariyega. Kaunsi date convenient rahegi?",
+    "rc_appointment_confirmed": "Bahut badiya ji. Main appointment confirm kar deti hoon. Hamari team time par pahunch jayegi. Jaldi milte hain!",
+    "rc_appointment_reask": "Maaf kijiye, samajh nahi aaya. Aap phir se date bata sakte hain please?",
+    "rc_filler_1": "Haan...", "rc_filler_2": "Ji haan...", "rc_filler_3": "Bilkul...",
+    "rc_filler_4": "Achha...", "rc_filler_5": "Samajh gayi...", "rc_filler_6": "Theek hai...",
 }
 
 ALL_SCRIPTS = {
@@ -89,27 +107,10 @@ def get_prefix(campaign: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# SHARED — Appointment booking + common questions (used by all 3 plans)
+# SHARED — Q&A/appointment keys migrated to per-plan dicts (ra_/rb_/rc_).
+# Kept as empty dict so utility scripts that import SHARED_SCRIPT don't error.
 # ─────────────────────────────────────────────────────────────────────────────
-SHARED_SCRIPT = {
-    "shared_q_location":
-        "Hamare showrooms Sector 14 Gurgaon, Delhi, aur Noida mein hain — "
-        "Monday se Sunday, subah 10 baje se raat 8 baje tak khule rehte hain.",
-
-    "shared_q_name":
-        "Mera naam Priya hai — main Krishna Furniture ki taraf se baat kar rahi hoon.",
-
-    "shared_q_valuation":
-        "Bahut simple hai — hamari team aapke ghar aakar purana furniture dekh kar "
-        "uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
-
-    "shared_appointment_ask":
-        "Main aapke liye free valuation visit book kar deti hoon. Hamari team aa kar furniture dekh legi, "
-        "value bata degi, uske baad hi aap decide kariyega. Kaunsi date convenient rahegi?",
-
-    "shared_appointment_confirmed":
-        "Bahut badiya ji. Main appointment confirm kar deti hoon. Hamari team time par pahunch jayegi. Jaldi milte hain!",
-}
+SHARED_SCRIPT = {}
 
 SHARED_INTENTS = {
     "ask_location": ["kahan hai", "showroom kahan", "location kya", "address batao",
@@ -137,6 +138,8 @@ SHARED_INTENTS = {
                             "हां बुक करो", "कन्फर्म है", "जी कन्फर्म",
                             "सैटरडे", "सैंडे", "संडे", "मंडे", "ट्यूज़डे", "ट्यूजडे",
                             "वेडनेसडे", "थर्सडे", "फ्राइडे", "वीकेंड", "weekend",
+                            "बैटर डे", "बैटरडे", "सैटर डे",
+                            "सन डे", "मन डे", "ट्यूज डे", "वेड नेस डे", "थर्स डे", "फ्राई डे",
                             "जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून",
                             "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर",
                             "january", "february", "march", "april", "june", "july",

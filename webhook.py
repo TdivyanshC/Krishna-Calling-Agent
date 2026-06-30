@@ -960,6 +960,7 @@ async def _fire_followup_wa(call_uuid: str, name: str, phone: str):
         logger.error(f"[{call_uuid}] Followup WA error: {e}")
 
 async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
+    _t0 = time.time()
     try:
         client = await _get_vobiz_client()
         r = await asyncio.wait_for(
@@ -969,17 +970,21 @@ async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
                          "Content-Type": "application/json"},
                 json={"urls": [audio_url], "legs": "aleg", "mix": False}
             ),
-            timeout=1.5
+            timeout=3.0
         )
-        logger.info(f"[{call_uuid}] Play → {r.status_code} | {audio_url}")
+        _elapsed = time.time() - _t0
+        logger.info(f"[{call_uuid}] Play → {r.status_code} | {_elapsed:.2f}s | {audio_url}")
         return r.status_code in (200, 202)
     except asyncio.TimeoutError:
-        logger.info(f"[{call_uuid}] Play SENT (timeout ok) → {audio_url}")
+        _elapsed = time.time() - _t0
+        logger.warning(f"[{call_uuid}] Play TIMEOUT after {_elapsed:.2f}s → {audio_url}")
         return True
     except Exception as e:
-        logger.error(f"[{call_uuid}] play_audio_url error: {e}")
+        logger.error(f"[{call_uuid}] play_audio_url error: {type(e).__name__}: {e}")
         global _vobiz_http_client
-        _vobiz_http_client = None
+        if isinstance(e, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
+            logger.warning(f"[{call_uuid}] resetting vobiz client due to {type(e).__name__}")
+            _vobiz_http_client = None
         return False
 
 
@@ -988,6 +993,21 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
     session.is_processing = True
     t0 = time.time()
     try:
+        # ── Fire filler PRE-STT for reactivation — customer hears instantly
+        if session.campaign in ("reactivation", "react_a", "react_b", "react_c"):
+            import random as _random
+            _react_st = getattr(session, "react_state", "GREETING")
+            _filler_map = {"GREETING": [2, 6], "PRESENT_OFFER": [3, 4], "WHATSAPP_CTA": [1, 5], "CLOSE": [3, 6]}
+            _filler_n = _random.choice(_filler_map.get(_react_st, [1, 2, 3]))
+            if session.campaign in ("react_a", "react_b", "react_c"):
+                from knowledge_react_abc import get_prefix as _get_prefix
+                _filler_prefix = _get_prefix(session.campaign)
+                _filler_url = f"{BASE_URL}/audio/static/{_filler_prefix}_filler_{_filler_n}_hi.wav"
+            else:
+                _filler_url = f"{BASE_URL}/audio/static/react_filler_{_filler_n}_hi.wav"
+            asyncio.create_task(play_audio_url(call_uuid, _filler_url))
+            session.is_priya_speaking = True
+            logger.info(f"[{call_uuid}] PRE-STT filler fired → {_filler_url}")
         text = await transcribe(ulaw_to_wav(audio))
 
         # ── Reactivation campaign: all turn logic lives in the engine ──────────
@@ -1008,20 +1028,6 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             return
         if session.campaign in ("reactivation", "react_a", "react_b", "react_c"):
             from webhook_reactivation import handle_reactivation_turn, play_key
-            # Play filler instantly so customer hears response start
-            import random
-            # Context-aware filler: match to react_state
-            _react_st = getattr(session, "react_state", "GREETING")
-            _filler_map = {
-                "GREETING":      [2, 6],   # हाँ / हाँ जी
-                "PRESENT_OFFER": [3, 4],   # बिल्कुल / अच्छा
-                "WHATSAPP_CTA":  [1, 5],   # जी / समझ गई
-                "CLOSE":         [3, 6],   # बिल्कुल / हाँ जी
-            }
-            _filler_n = random.choice(_filler_map.get(_react_st, [1, 2, 3]))
-            filler_url = f"{BASE_URL}/audio/static/react_filler_{_filler_n}_hi.wav"
-            asyncio.create_task(play_audio_url(call_uuid, filler_url))
-            session.is_priya_speaking = True
             should_continue = await handle_reactivation_turn(session, text or "", call_uuid)
             session.is_priya_speaking = False
             if not should_continue:
@@ -1407,7 +1413,12 @@ async def answer_outbound(request: Request):
         prefix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
         greet_key = f"{prefix}_greet_main" if campaign in ("react_a", "react_b", "react_c") else "react_greet_main"
         audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
-        play_tag = f"<Play>{audio_url}</Play>"
+        if campaign in ("react_a", "react_b", "react_c"):
+            _ug_suffix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}[campaign]
+            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_{_ug_suffix}_hi.wav"
+        else:
+            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
+        play_tag = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
     else:
         greeting  = OUTBOUND_GREETING.format(name=name) if name else INBOUND_GREETING
         audio_url = await save_audio(greeting, f"greeting_out_{call_uuid}")
