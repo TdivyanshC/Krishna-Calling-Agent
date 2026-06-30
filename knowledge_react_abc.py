@@ -3,12 +3,12 @@
 # campaign_type: react_a | react_b | react_c
 
 REACT_A_SCRIPT = {
-    "ra_greet_main": "Suno, abb aap apne ghar ko naya look de sakte ho bahut easily. Hum aapka purana furniture bhi achhe rate mein khareed lenge aur naye furniture par bhi heavy discount denge. Aapko pura offer batau?",
+    "ra_greet_main": "Aap apne ghar ka furniture upgrade karna chahte ho toh ab woh bahut aasaan ho gaya hai. Hum aapka purana furniture bhi achhi value mein lete hain aur naye furniture par bhi special discount chal raha hai. 30 second mein offer samjha doon?",
     "ra_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya aapko. Ek khaas offer hai sirf aapke liye.",
     "ra_greet_repeat": "Haan ji — hum aapka purana furniture achhe rate mein khareed lenge aur naye par heavy discount denge. Matlab ghar ka poora look badal jaata hai aadhe daam mein.",
     "ra_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi hai. Aap hamare valued customer hain isliye personally call ki.",
     "ra_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
-    "ra_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Matlab aadhe daam mein bilkul naya latest furniture ghar mein. Aur aapko ek baat batau?",
+    "ra_offer_main": "Krishna Furniture mein abhi naye furniture par 25% discount chal raha hai. Aur agar aap apna purana furniture exchange karte hain toh uski value ka bhi extra benefit milta hai. Matlab overall kharcha kaafi kam ho jaata hai. Ek aur achhi baat bataun?",
     "ra_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Koi hidden condition nahi hai.",
     "ra_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Sector 14 Gurgaon, Delhi, Noida — teeno jagah hain hamare showrooms.",
     "ra_offer_urgency": "Yeh offer sirf is mahine tak hai aur pieces limited hain. Jo pehle aaya usne le liya. WhatsApp par details check karo pehle — phir decide karo.",
@@ -18,8 +18,7 @@ REACT_A_SCRIPT = {
     "ra_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Hamare paas factory price hai plus exchange value — total comparison WhatsApp par hai.",
     "ra_obj_think": "Zaroor socho — but offer is mahine tak hi hai. WhatsApp par details reh jaaye, jab decide karo tab kaam aayegi.",
     "ra_obj_recovery": "Sach bolunga — jo families yeh offer leke gayi hain wo bahut khush hain. Aadhe daam mein ghar ka poora look badal jaata hai. Aap bhi iska fayda uthao.",
-    "ra_hook_cta": "Aap hamare purane customer ho isliye aapko call kari maine, aap der mat karo, showroom mein aao hum wahi baat karenge aur details aapko WhatsApp par bhi bhej di hain, wahan bhi aap mujhse baat kar sakte ho.",
-    "ra_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna.",
+    "ra_hook_cta": "Aap hamare purane customer hain, isliye maine personally call kiya. Mere hisaab se ek baar free furniture valuation toh kara hi lena chahiye. Uske baad decision poori tarah aapka rahega.",
     "ra_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "ra_close_conviction": "Ab der mat karo — pieces limited hain. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
     "ra_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
@@ -28,12 +27,12 @@ REACT_A_SCRIPT = {
 }
 
 REACT_B_SCRIPT = {
-    "rb_greet_main": "Soniya ji ne toh poora ghar badal liya — naya sofa, naya bed, sab kuch — sirf 25,000 mein. Unka purana furniture hum le gaye, naya de diya. Next maine aapko call kiya hai — aapko bhi yahi offer chahiye?",
+    "rb_greet_main": "Pichhle kuch dino mein bahut saare customers ne apna purana furniture exchange karke naya furniture liya hai. Isliye maine socha aapko bhi call kar doon. Agar aap bhi ghar ka furniture upgrade karna chahte hain toh yeh offer kaafi useful ho sakta hai. Sunna chahenge?",
     "rb_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya. Soniya ji jaisi bahut families is mahine ghar badal rahi hain — aapke liye bhi yahi offer leke aayi hoon.",
     "rb_greet_repeat": "Haan ji — hum purane customers ko ek special offer de rahe hain. Purana furniture achhe rate mein khareed lenge aur naye par heavy discount denge. Aapko offer batau?",
     "rb_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi. Aap hamare valued customer hain isliye personally call ki.",
     "rb_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
-    "rb_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se milega, aur aap apna purana furniture denge toh uski value par 25% aur. Matlab effectively aadhe daam mein bilkul naya furniture ghar mein aa jaata hai. Aur sabse exciting baat — aap hamare special purane customer hain, isliye yeh offer sirf aapke liye personally hai. Aapko ek aur baat batau?",
+    "rb_offer_main": "Abhi Krishna Furniture mein naye furniture par 25% discount chal raha hai. Aur purana furniture exchange karne par uski value ka bhi extra benefit milta hai. Is wajah se kaafi log expected se kam budget mein naya furniture le pa rahe hain. Ek aur baat bataun?",
     "rb_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Koi hidden condition nahi hai.",
     "rb_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Free mein value estimate ho jaati hai.",
     "rb_offer_urgency": "Is mahine bahut families aa rahi hain — pieces limited hain. Jo pehle aaya usne le liya. Aap der mat karo.",
@@ -43,7 +42,7 @@ REACT_B_SCRIPT = {
     "rb_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Yahan factory price hai plus exchange value — total comparison WhatsApp par hai.",
     "rb_obj_think": "Zaroor socho — but offer is mahine tak hi hai. WhatsApp details reh jaaye — jab decide karo tab kaam aayegi.",
     "rb_obj_recovery": "Jo families yeh offer le ke gayi hain wo bahut khush hain. Aap bhi ek baar showroom aao — free mein value estimate ho jaati hai. Koi commitment nahi.",
-    "rb_hook_cta": "Soniya ji jaisi bahut families yeh offer le rahi hain is mahine — purana furniture dekar naya le ja rahi hain. Aap bhi yeh mauka mat chhodiye. Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon.",
+    "rb_hook_cta": "Aap bhi hamare purane customer hain, isliye yeh offer maine personally share kiya. Main WhatsApp par furniture ke photos, prices aur exchange process bhej deti hoon. Ek baar dekh lijiye, decision baad mein bhi le sakte hain.",
     "rb_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna.",
     "rb_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
     "rb_close_conviction": "Bahut sahi decision hai. Showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
@@ -53,12 +52,12 @@ REACT_B_SCRIPT = {
 }
 
 REACT_C_SCRIPT = {
-    "rc_greet_main": "Sach batana aap — agar aapko naya furniture mil jaaye aur purana bhi achhe rate mein chala jaaye, sab aadhe daam mein — toh aap sunna chahenge? Kyunki abhi exactly yahi ho raha hai hamare store mein.",
+    "rc_greet_main": "Ek chhota sa sawal poochun? Agar aapko naya furniture mil jaaye aur purana bhi achhi value mein chala jaaye, woh bhi kam kharche mein... toh kya aap uske baare mein sunna chahenge?",
     "rc_greet_who": "Jee, main Priya bol rahi hoon Krishna Furniture ki taraf se. Aap hamare customer reh chuke hain isliye maine personally phone kiya. Ek sawaal poochha tha — agar naya furniture aadhe daam mein mile toh sunenge?",
     "rc_greet_repeat": "Haan ji — main pooch rahi thi, agar aapko naya furniture mile aur purana bhi achhe rate mein chala jaaye — aadhe daam mein — toh aap sunna chahenge?",
     "rc_greet_privacy": "Jee bilkul — aapka number hamare purane customer records mein hai. Koi third party nahi. Aap hamare valued customer hain isliye personally call ki.",
     "rc_greet_hostile": "Maafi chahti hoon disturb karne ke liye. WhatsApp par details bhej deti hoon — dekhna na dekhna aap par hai. Aapka din achha rahe!",
-    "rc_offer_main": "Toh suno — Krishna Furniture mein abhi 25% discount upar se, aur purana furniture dene par 25% aur. Ek aur baat batau?",
+    "rc_offer_main": "Toh bas wahi offer chal raha hai Krishna Furniture mein. Naye furniture par 25% discount hai aur purana furniture exchange karne par uski value ka bhi alag benefit milta hai. Ek aur baat bataun?",
     "rc_offer_explain": "Bilkul simple hai — aap showroom aao, hum aapke purane furniture ki value calculate karenge aapke saamne. Us value par 25% aur, plus upar se 25% — total saving 43 se 50%. Free mein value estimate ho jaati hai — koi commitment nahi.",
     "rc_offer_trust": "Samajh sakti hoon — aajkal bahut calls aati hain. Aap showroom mein aa kar personally verify kar sakte hain — koi commitment nahi. Free mein furniture ki value estimate ho jaati hai. Sirf ek baar aao toh sahi.",
     "rc_offer_urgency": "Yeh offer sirf apne purane customers ke liye hai — aur is mahine tak hi valid hai. Jo pehle aaya usne le liya. Aap der mat karo.",
@@ -68,10 +67,9 @@ REACT_C_SCRIPT = {
     "rc_obj_online": "Online mein delivery, installation, after-sales sab alag hote hain. Hamare paas factory price hai plus exchange value — total comparison WhatsApp par hai.",
     "rc_obj_think": "Zaroor socho — main force nahi kar rahi. But offer is mahine tak hi hai. WhatsApp details reh jaaye — jab decide karo tab kaam aayegi.",
     "rc_obj_recovery": "Dekho, maine aapko force nahi karna. Bas ek baar WhatsApp dekho, showroom aao — free mein furniture ki value estimate ho jaati hai. Koi commitment nahi. Aao toh sahi.",
-    "rc_hook_cta": "Yeh offer sirf hamare purane customers ke liye hai — bahar ke logo ko nahi milta. Aap special hain isliye personally call ki. Main abhi WhatsApp par sab bhej rahi hoon.",
+    "rc_hook_cta": "Yeh offer hum specially apne existing customers ke saath share kar rahe hain. Isliye maine aapko personally call kiya. Main WhatsApp par photos aur poori details bhej deti hoon. Ek baar dekh lijiye, koi commitment bilkul nahi hai.",
     "rc_wa_cta": "Main abhi WhatsApp par photos, prices, exchange process sab bhej rahi hoon. Ek baar dekh lena — decision baad mein karna. Koi commitment nahi.",
     "rc_close": "Bilkul sahi decision hai. WhatsApp dekho, ek baar showroom aao — free mein value estimate ho jaayegi. Purana furniture hum sambhal lenge, aap bas naya chunna. Bahut shukriya!",
-    "rc_close_conviction": "Aap showroom mein aao, apne saamne value calculate karwao, aur wohi din naya furniture le jaao. Purana hum le lenge. Bahut shukriya!",
     "rc_dnc": "Maafi chahti hoon! Aapka number DNC list mein add kar diya jaayega — ab koi call nahi aayegi. Bahut bahut shukriya.",
     "rc_filler_1": "Jee...", "rc_filler_2": "Haan...", "rc_filler_3": "Bilkul...",
     "rc_filler_4": "Achha...", "rc_filler_5": "Samajh gayi...", "rc_filler_6": "Haan jee...",
@@ -106,11 +104,11 @@ SHARED_SCRIPT = {
         "uski value batayegi, wahi se pickup bhi ho jaayega. Aapke saamne hi sab hoga.",
 
     "shared_appointment_ask":
-        "Main aapka appointment book kar deti hoon, hamari team visit kar legi — "
-        "aapko koi takleef nahi hogi poore process mein. Aap date bata do mujhe please.",
+        "Main aapke liye free valuation visit book kar deti hoon. Hamari team aa kar furniture dekh legi, "
+        "value bata degi, uske baad hi aap decide kariyega. Kaunsi date convenient rahegi?",
 
     "shared_appointment_confirmed":
-        "Ji badiya, main aapka wait karungi, jaldi milte hain!",
+        "Bahut badiya ji. Main appointment confirm kar deti hoon. Hamari team time par pahunch jayegi. Jaldi milte hain!",
 }
 
 SHARED_INTENTS = {
@@ -136,7 +134,15 @@ SHARED_INTENTS = {
                             "कल", "परसों", "सोमवार", "मंगलवार", "बुधवार", "गुरुवार",
                             "शुक्रवार", "शनिवार", "रविवार", "सुबह", "शाम", "रात", "बजे",
                             "तारीख", "ठीक है आ जाऊंगा", "मैं आऊंगा", "बुक कर दो",
-                            "हां बुक करो", "कन्फर्म है", "जी कन्फर्म"],
+                            "हां बुक करो", "कन्फर्म है", "जी कन्फर्म",
+                            "सैटरडे", "सैंडे", "संडे", "मंडे", "ट्यूज़डे", "ट्यूजडे",
+                            "वेडनेसडे", "थर्सडे", "फ्राइडे", "वीकेंड", "weekend",
+                            "जनवरी", "फरवरी", "मार्च", "अप्रैल", "मई", "जून",
+                            "जुलाई", "अगस्त", "सितंबर", "अक्टूबर", "नवंबर", "दिसंबर",
+                            "january", "february", "march", "april", "june", "july",
+                            "august", "september", "october", "november", "december",
+                            "agle hafte", "agle mahine", "अगले हफ्ते", "अगले महीने",
+                            "is hafte", "इस हफ्ते"],
 }
 
 REACT_ABC_INTENTS = {

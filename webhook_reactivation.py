@@ -7,6 +7,7 @@ Supports campaign_type: react_a, react_b, react_c
 import asyncio
 import logging
 import os
+import time
 
 import httpx
 
@@ -49,19 +50,23 @@ async def _vobiz_play(call_uuid: str, audio_url: str) -> bool:
     )
     payload = {"urls": [audio_url], "legs": "aleg", "mix": False}
     hdrs = {"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
+    _t0 = time.time()
     try:
         client = await _get_http_client()
-        r = await asyncio.wait_for(client.post(url, json=payload, headers=hdrs), timeout=1.5)
+        r = await asyncio.wait_for(client.post(url, json=payload, headers=hdrs), timeout=3.0)
         ok = r.status_code == 202
-        logger.info(f"[{call_uuid}] React play {'OK' if ok else 'FAIL'} {r.status_code} → {audio_url}")
+        logger.info(f"[{call_uuid}] React play {'OK' if ok else 'FAIL'} {r.status_code} | {time.time()-_t0:.2f}s → {audio_url}")
         return ok
     except asyncio.TimeoutError:
-        logger.info(f"[{call_uuid}] React play SENT (timeout ok) → {audio_url}")
+        _elapsed = time.time() - _t0
+        logger.warning(f"[{call_uuid}] React play TIMEOUT after {_elapsed:.2f}s → {audio_url}")
         return True
     except Exception as exc:
-        logger.error(f"[{call_uuid}] React play error: {exc}")
+        logger.error(f"[{call_uuid}] React play error: {type(exc).__name__}: {exc}")
         global _http_client
-        _http_client = None
+        if isinstance(exc, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
+            logger.warning(f"[{call_uuid}] resetting react http client due to {type(exc).__name__}")
+            _http_client = None
         return False
 
 async def play_key(call_uuid: str, key: str, session=None, log_transcript: bool = True) -> bool:
@@ -254,9 +259,14 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             await play_key(call_uuid, f"{p}_wa_cta", session, log_transcript=False)
             await fire_whatsapp(session, call_uuid)
             return True
-        session.react_state = "WHATSAPP_CTA"
         await play_key(call_uuid, f"{p}_hook_cta", session)
-        await play_key(call_uuid, f"{p}_wa_cta", session, log_transcript=False)
+        if p == "ra":
+            asyncio.create_task(fire_whatsapp(session, call_uuid))
+            session.react_state = "APPOINTMENT"
+            await play_key(call_uuid, "shared_appointment_ask", session)
+        else:
+            session.react_state = "WHATSAPP_CTA"
+            await play_key(call_uuid, f"{p}_wa_cta", session, log_transcript=False)
         return True
 
     # ── WHATSAPP_CTA ──────────────────────────────────────────────────────────
@@ -323,9 +333,12 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
             session.react_state = "CLOSE"
             await play_key(call_uuid, f"{p}_close", session)
             return False
-        # Only treat as confirmation if a concrete date/day keyword was used —
-        # plain "haan"/"positive" alone is NOT enough to confirm an appointment
-        if "appointment_confirm" in intents:
+        # Treat as confirmation if a concrete date/day keyword was used,
+        # OR if the transcript contains a digit (e.g. "6 august", "15 tareek", "20 july")
+        # since we are explicitly in the APPOINTMENT state asking for a date.
+        # Plain "haan"/"positive" alone is NOT enough to confirm an appointment.
+        _has_digit = any(ch.isdigit() for ch in t)
+        if "appointment_confirm" in intents or _has_digit:
             # HOT LEAD — appointment confirmed
             session.appointment_confirmed = True
             session.lead_tier_override = "hot"
