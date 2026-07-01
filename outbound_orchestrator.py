@@ -71,7 +71,7 @@ async def get_due_leads(client: httpx.AsyncClient, slots: int) -> list[dict]:
     url = (
         f"{SUPABASE_URL}/rest/v1/outbound_leads"
         f"?tenant_id=eq.{TENANT_ID}"
-        f"&campaign_type=eq.{CAMPAIGN_TYPE}"
+        f"&campaign_type=in.({CAMPAIGN_TYPE})"
         f"&status=in.(pending,unanswered)"
         f"&or=(next_call_at.is.null,next_call_at.lte.{now_iso})"
         f"&order=created_at.asc"
