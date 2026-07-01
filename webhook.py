@@ -1465,6 +1465,8 @@ async def recording_done(request: Request):
     call_uuid    = form.get("CallUUID", "")
     logger.info(f"[{call_uuid}] /recording-done full payload: {all_fields}")
     recording_url = form.get("RecordFile") or form.get("RecordUrl", "")
+    recording_id  = form.get("RecordingID", "")
+    proxied_url   = f"{BASE_URL}/recording/{recording_id}" if recording_id else recording_url
     duration     = form.get("RecordingDuration", "0")
     logger.info(f"[{call_uuid}] Recording ready | url={recording_url} | duration={duration}s")
 
@@ -1484,11 +1486,17 @@ async def recording_done(request: Request):
                     headers=hdrs,
                     json={"recording_url": recording_url, "recording_duration": int(duration)}
                 )
-                await c.patch(
-                    f"{sb_url}/rest/v1/call_summaries?call_uuid=eq.{call_uuid}",
-                    headers=hdrs,
-                    json={"recording_url": recording_url}
-                )
+            # call_summaries row may not exist yet — patch after delay
+            async def _save_recording_to_summary(uuid, url, surl, skey):
+                await asyncio.sleep(20)
+                try:
+                    h = {"apikey": skey, "Authorization": f"Bearer {skey}", "Content-Type": "application/json", "Prefer": "return=minimal"}
+                    async with httpx.AsyncClient(timeout=5) as c2:
+                        await c2.patch(f"{surl}/rest/v1/call_summaries?call_uuid=eq.{uuid}", headers=h, json={"recording_url": url})
+                    logger.info(f"[{uuid}] Recording URL saved to call_summaries (delayed)")
+                except Exception as ex:
+                    logger.error(f"[{uuid}] Failed delayed recording save: {ex}")
+            asyncio.create_task(_save_recording_to_summary(call_uuid, proxied_url, sb_url, sb_key))
             logger.info(f"[{call_uuid}] Recording URL saved to Supabase")
         except Exception as e:
             logger.error(f"[{call_uuid}] Failed to save recording URL: {e}")
