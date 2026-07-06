@@ -185,6 +185,20 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         session.conversation = []
     session.conversation.append(("user", t))
 
+    # ── Machine/IVR detection — hang up immediately ───────────────────────────
+    _machine_phrases = [
+        "please stay on the line", "stay on the line", "प्लीज स्टे ऑन द लाइन",
+        "your call is being connected", "please hold", "all our representatives",
+        "press 1", "press 2", "दबाएं", "के लिए 1", "के लिए 2",
+        "voicemail", "leave a message", "not available right now",
+        "the number you have dialed", "is not reachable", "switched off",
+        "स्विच्ड ऑफ", "नॉट रीचेबल", "उपलब्ध नहीं",
+    ]
+    if any(phrase.lower() in t.lower() for phrase in _machine_phrases):
+        logger.info(f"[{call_uuid}] Machine/IVR detected — hanging up")
+        session.machine_detected = True
+        return False
+
     # ── DNC ───────────────────────────────────────────────────────────────────
     if "dnc" in intents:
         session.dnc = True
@@ -334,6 +348,7 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         if "appointment_confirm" in intents or _has_digit or _has_day_suffix:
             # HOT LEAD — appointment confirmed
             session.appointment_confirmed = True
+            session.visit_date_raw_text = t
             session.lead_tier_override = "hot"
             session.lead_score_override = 85
             session.react_state = "CLOSE"

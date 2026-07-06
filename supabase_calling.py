@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 import httpx
 
-from groq_normalize import ai_normalize_lead_fields
+from groq_normalize import ai_normalize_lead_fields, ai_normalize_visit_date
 
 logger = logging.getLogger(__name__)
 
@@ -427,8 +427,8 @@ async def finalize_call(
 
     # Detect mid_answered: picked up but did not complete conversation
     call_was_answered = duration > 5
-    if getattr(session, "campaign", "") == "reactivation":
-        # For reactivation: answered = WA sent OR buying signal OR score >= 25
+    if getattr(session, "campaign", "") in ("reactivation", "react_a", "react_b", "react_c"):
+        # For reactivation (incl. A/B/C): answered = WA sent OR buying signal OR score >= 25
         react_intents = getattr(session, "react_intents_seen", set())
         all_slots_filled = (
             getattr(session, "wa_sent", False) or
@@ -545,31 +545,134 @@ async def finalize_call(
     # ── Update outbound_leads with correct final status ─────────
     # This runs AFTER finalize_call so we have all slot data
     if phone_clean:
-        _ol_status = 'pending'  # default
-        _ol_next   = None
-        _ol_retry  = None
-        if call_was_answered:
-            if all_slots_filled:
-                _ol_status = 'answered'
+        from datetime import timedelta
+
+        _campaign              = getattr(session, "campaign", "")
+        _not_interested        = "not_interested" in getattr(session, "react_intents_seen", set())
+        _machine_detected      = getattr(session, "machine_detected", False)
+        _appointment_confirmed = getattr(session, "appointment_confirmed", False)
+        _wa_decline_confirm    = getattr(session, "wa_decline_confirm", False)
+
+        _ol_payload = None  # None = leave outbound_leads untouched this call
+
+        if _not_interested:
+            # A "no" is always final — hard DNC regardless of any other signal.
+            _ol_payload = {"status": "dnc", "dnc": True, "cooldown_until": None}
+            logger.info(f"[{call_uuid}] outbound_lead → dnc (not_interested)")
+
+        elif _machine_detected:
+            # IVR/voicemail pickup — not a rejection, not a real conversation.
+            # Excluded from future selection but NOT marked dnc.
+            _ol_payload = {"status": "ivr_detected"}
+            logger.info(f"[{call_uuid}] outbound_lead → ivr_detected")
+
+        elif _campaign == "followup_wa":
+            # One-shot static-audio nudge call — no conversation, no appointment
+            # logic, no slot data collected. Deliberately NOT routed through
+            # visit_date_status or answered_no_date_count; left untouched here.
+            pass
+
+        elif _appointment_confirmed:
+            # Visit date confirmed during the call — authoritative for
+            # react_a/b/c/reactivation, independent of the wa_sent-based
+            # all_slots_filled heuristic below.
+            _ol_payload = {"status": "answered", "visit_date_status": "confirmed"}
+
+            _raw_date_text = getattr(session, "visit_date_raw_text", None)
+            if _raw_date_text:
+                _reference_dt = getattr(session, "started_at", None) or datetime.now(timezone.utc).isoformat()
+                try:
+                    _parsed_date = await ai_normalize_visit_date(_raw_date_text, _reference_dt)
+                except Exception as e:
+                    logger.error(f"[{call_uuid}] visit_date parse error: {e} | raw='{_raw_date_text}'")
+                    _parsed_date = None
+
+                if _parsed_date:
+                    _ol_payload["visit_date"] = _parsed_date
+                else:
+                    logger.warning(
+                        f"[{call_uuid}] visit_date_raw_text='{_raw_date_text}' could not be "
+                        f"resolved confidently — visit_date left null, visit_date_status still 'confirmed'"
+                    )
             else:
-                # Picked up but incomplete — mid_answered, retry after 1 day
-                _ol_status = 'mid_answered'
-                from datetime import timedelta
-                _ol_next  = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
-                _ol_retry = 0  # reset retry count, fresh attempt
-        # If not answered: hangup handler in webhook.py already sets unanswered/dnc
-        if _ol_status in ('answered', 'mid_answered'):
+                logger.warning(f"[{call_uuid}] appointment_confirmed but no visit_date_raw_text on session")
+
+            logger.info(
+                f"[{call_uuid}] outbound_lead → answered (appointment_confirmed, "
+                f"visit_date={_ol_payload.get('visit_date', 'unresolved')})"
+            )
+
+        elif call_was_answered:
+            # For react_a/b/c, 'answered' must ONLY come from the
+            # appointment_confirmed branch above — wa_sent fires on nearly
+            # every turn of these scripts, so the generic all_slots_filled
+            # fallback would otherwise mark almost any answered call
+            # 'answered' even with no date confirmed. Gate it out here so
+            # these three fall through to the answered_no_date_count path
+            # instead. Not applied to any other campaign (reactivation,
+            # fresh_lead, etc. keep the original fallback behavior).
+            if all_slots_filled and _campaign not in ("react_a", "react_b", "react_c"):
+                _ol_payload = {"status": "answered"}
+            else:
+                # Answered but no visit date confirmed. Track via answered_no_date_count,
+                # capped at 3. Requires a read-then-write since PostgREST PATCH can't
+                # express "column = column + 1" without an RPC.
+                _current_count = 0
+                try:
+                    async with httpx.AsyncClient(timeout=5) as _c:
+                        _r = await _c.get(
+                            f"{SUPABASE_URL}/rest/v1/outbound_leads",
+                            headers=_headers(),
+                            params={
+                                "phone":     f"eq.{phone_clean}",
+                                "tenant_id": f"eq.{TENANT_ID}",
+                                "select":    "answered_no_date_count",
+                                "limit":     "1",
+                            },
+                        )
+                        if _r.status_code == 200 and _r.json():
+                            _current_count = _r.json()[0].get("answered_no_date_count") or 0
+                except Exception as e:
+                    logger.error(f"[{call_uuid}] answered_no_date_count lookup error: {e}")
+
+                _new_count = _current_count + 1
+                if _new_count >= 3:
+                    # Stop scheduling calls — NOT a rejection, so dnc stays false.
+                    # Still eligible for WhatsApp-only follow-up outside this pipeline.
+                    _ol_payload = {
+                        "status":                 "no_date_stalled",
+                        "answered_no_date_count": _new_count,
+                    }
+                    logger.info(f"[{call_uuid}] outbound_lead → no_date_stalled ({_new_count}/3)")
+                else:
+                    _ol_payload = {
+                        "status":                 "mid_answered",
+                        "answered_no_date_count": _new_count,
+                        "cooldown_until":         (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat(),
+                    }
+                    logger.info(f"[{call_uuid}] outbound_lead → mid_answered ({_new_count}/3 no-date)")
+        # If not answered and none of the above fired: leave outbound_leads untouched —
+        # the true no-answer path is handled by outbound_orchestrator.py's
+        # cleanup_stuck_leads() / schedule_retry_or_dnc(), same as before.
+
+        if _wa_decline_confirm and call_was_answered and _ol_payload is not None:
+            # The one confirmatory call has now genuinely happened (a real
+            # conversation, not just a ring) — consume it regardless of
+            # outcome. A repeated "not interested" already hit the dnc branch
+            # above; anything else falls through to the normal
+            # appointment_confirmed / answered_no_date_count handling above,
+            # unchanged — this just also marks the confirm call as used.
+            _ol_payload["confirm_call_attempted"] = True
+            logger.info(f"[{call_uuid}] outbound_lead → confirm_call_attempted=True (wa_decline_confirm lane)")
+
+        if _ol_payload is not None:
             try:
                 async with httpx.AsyncClient(timeout=5) as _c:
-                    _payload = {'status': _ol_status}
-                    if _ol_next:  _payload['next_call_at'] = _ol_next
-                    if _ol_retry is not None: _payload['retry_count'] = _ol_retry
                     await _c.patch(
-                        f"{SUPABASE_URL}/rest/v1/outbound_leads?phone=eq.{phone_clean.replace("+", "%2B")}&tenant_id=eq.{TENANT_ID}",
+                        f"{SUPABASE_URL}/rest/v1/outbound_leads?phone=eq.{phone_clean.replace('+', '%2B')}&tenant_id=eq.{TENANT_ID}",
                         headers=_headers(),
-                        json=_payload,
+                        json=_ol_payload,
                     )
-                logger.info(f'[{call_uuid}] outbound_lead → {_ol_status}')
             except Exception as e:
                 logger.error(f'outbound_lead status update error: {e}')
 

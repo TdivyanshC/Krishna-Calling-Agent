@@ -108,9 +108,13 @@ def get_prefix(campaign: str) -> str:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SHARED — Q&A/appointment keys migrated to per-plan dicts (ra_/rb_/rc_).
-# Kept as empty dict so utility scripts that import SHARED_SCRIPT don't error.
+# Kept mostly empty so utility scripts that import SHARED_SCRIPT don't error;
+# holds plan-agnostic one-off lines instead (e.g. the wa_decline_confirm lane's
+# opener, which plays regardless of which of react_a/b/c the lead is on).
 # ─────────────────────────────────────────────────────────────────────────────
-SHARED_SCRIPT = {}
+SHARED_SCRIPT = {
+    "wa_decline_confirm_greet": "Namaste ji, maine dekha aapne WhatsApp par thoda hesitant feel kiya tha. Bas ek baar confirm karna chahti thi — kya abhi ke liye interested nahi hain, ya kuch aur jaankari chahiye?",
+}
 
 SHARED_INTENTS = {
     "ask_location": ["kahan hai", "showroom kahan", "location kya", "address batao",

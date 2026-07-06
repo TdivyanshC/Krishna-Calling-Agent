@@ -1,4 +1,6 @@
 import os, json, logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
@@ -46,3 +48,56 @@ budget_numeric: if range given take the HIGHER bound as integer (e.g. "1 se 2 la
 
 def _fallback(product, budget_raw, urgency_raw):
     return {"product": product, "budget": budget_raw, "urgency": urgency_raw, "budget_numeric": None}
+
+
+async def ai_normalize_visit_date(raw_text: str, reference_iso_utc: str) -> str | None:
+    """
+    Resolve a spoken visit-date utterance (e.g. "kal", "is weekend", "6 august",
+    "15 tareek") into an absolute YYYY-MM-DD date, relative to the call's own
+    date — converted to IST, since relative references are spoken in the
+    customer's local calendar day, not UTC.
+
+    Returns None if parsing fails or the utterance isn't specific enough to
+    resolve confidently. Never guesses — callers should treat None as "leave
+    visit_date null" and log it, not as an error to retry.
+    """
+    if not raw_text:
+        return None
+
+    try:
+        ref_dt = datetime.fromisoformat(reference_iso_utc.replace("Z", "+00:00"))
+        ref_ist_date = ref_dt.astimezone(ZoneInfo("Asia/Kolkata")).date().isoformat()
+    except Exception:
+        ref_ist_date = datetime.now(ZoneInfo("Asia/Kolkata")).date().isoformat()
+
+    prompt = f"""Today's date is {ref_ist_date} (India, IST). A customer said this when asked to confirm a furniture store visit date: "{raw_text}"
+
+Resolve it to an absolute date, handling relative references ("kal"/tomorrow, "is weekend"/nearest upcoming Saturday-or-Sunday, weekday names, "is hafte"/this week, etc.) relative to today's date above.
+If the utterance does not contain enough information to confidently resolve an actual date, return null — do not guess.
+
+Reply with JSON only, no explanation: {{"date": "YYYY-MM-DD or null"}}"""
+
+    try:
+        resp = await _get_groq().chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=30,
+            temperature=0.0,
+        )
+        raw = resp.choices[0].message.content.strip()
+        logger.info(f"Groq visit-date raw response: '{raw}'")
+        raw = raw.replace("```json", "").replace("```", "").strip()
+        if not raw:
+            logger.error("Groq visit-date normalize returned empty body")
+            return None
+        result = json.loads(raw)
+        date_str = result.get("date")
+        if not date_str:
+            logger.info(f"Groq visit-date normalize → no confident date for '{raw_text}'")
+            return None
+        datetime.fromisoformat(date_str)  # sanity-check it's a real date, raises if not
+        logger.info(f"Groq visit-date normalize → '{raw_text}' resolved to {date_str}")
+        return date_str
+    except Exception as e:
+        logger.error(f"Groq visit-date normalize error: {e} | raw_text='{raw_text}'")
+        return None
