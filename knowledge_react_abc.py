@@ -93,17 +93,31 @@ REACT_C_SCRIPT = {
     "rc_filler_4": "Achha...", "rc_filler_5": "Samajh gayi...", "rc_filler_6": "Theek hai...",
 }
 
+FRESH_CTA_SCRIPT = {
+    # All lines voiced as Simran. No dnc key here on purpose — hard decline
+    # reuses ra_dnc's existing cached audio directly (see handle_fresh_cta_turn).
+    "fresh_greet_bed": "Namaste ji, aapse WhatsApp par baat hui thi — aap bed dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
+    "fresh_greet_sofa": "Namaste ji, aapse WhatsApp par baat hui thi — aap sofa dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
+    "fresh_greet_wardrobe": "Namaste ji, aapse WhatsApp par baat hui thi — aap wardrobe dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
+    "fresh_greet_dining": "Namaste ji, aapse WhatsApp par baat hui thi — aap dining set dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
+    "fresh_greet_generic": "Namaste ji, maine dekha aap Krishna Furniture mein interested the. Bas yeh jaanna chahti thi ki store visit ke liye kaunsa din aapke liye convenient rahega?",
+    "fresh_objection": "Ji sir, main aapke budget ke hisaab se achhe options dikha dungi. Store par aur bhi designs dekhne ko milenge, aur best possible discount bhi karwa dungi. Ek baar visit karke dekh lijiye — konsa din sahi rahega?",
+    "fresh_appointment_confirmed": "Bahut badhiya ji! Main aapka appointment confirm kar deti hoon. Hamari team aapka intezar karegi. Jaldi milte hain!",
+    "fresh_no_date_close": "Koi baat nahi ji. Main aapko WhatsApp par kuch achhe options bhej deti hoon — aap aaram se dekh lijiye, phir jab convenient ho tab visit plan kar lenge.",
+}
+
 ALL_SCRIPTS = {
     "react_a": REACT_A_SCRIPT,
     "react_b": REACT_B_SCRIPT,
     "react_c": REACT_C_SCRIPT,
+    "fresh_cta": FRESH_CTA_SCRIPT,
 }
 
 def get_script(campaign: str) -> dict:
     return ALL_SCRIPTS.get(campaign, REACT_A_SCRIPT)
 
 def get_prefix(campaign: str) -> str:
-    return {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
+    return {"react_a": "ra", "react_b": "rb", "react_c": "rc", "fresh_cta": "fresh"}.get(campaign, "ra")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

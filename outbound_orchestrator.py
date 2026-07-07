@@ -53,10 +53,22 @@ CALL_END_HOUR   = 22   # 10:00 PM IST
 # in schedule_retry_or_dnc().
 PICKUP_MORNING_HOUR, PICKUP_MORNING_MINUTE = 10, 30   # 10:30 IST
 PICKUP_EVENING_HOUR, PICKUP_EVENING_MINUTE = 19, 30   # 19:30 IST
-PICKUP_PAIR_GAP_DAYS = {1: 1, 2: 2, 3: 3}   # pair index just finished -> days until next pair's morning slot
-MAX_PICKUP_ATTEMPTS  = 8
+
+# Pickup-attempt cadence, keyed by funnel_type (looked up by the caller and
+# passed into schedule_retry_or_dnc() — see its docstring — rather than
+# hardcoded, so each funnel's cadence stays independently readable/editable
+# without duplicating the function itself).
+#   pair_gap_days[p] = days until pair p+1's morning slot, once pair p just finished
+#   max_attempts     = total unanswered attempts before dnc
+PICKUP_CADENCE = {
+    "reactivation": {"pair_gap_days": {1: 1, 2: 2, 3: 3}, "max_attempts": 8},  # Day1/2/4/7, 8 max
+    "fresh_cta":    {"pair_gap_days": {1: 1, 2: 1},       "max_attempts": 6},  # Day1/2/3, 6 max
+}
+DEFAULT_PICKUP_CADENCE = "reactivation"  # used for any funnel_type not in PICKUP_CADENCE (incl. None)
 
 POLL_INTERVAL = 20   # seconds
+
+FRESH_CTA_CAMPAIGN_ID = "8fab0334-6d8c-4b71-be72-9d170c8ad3fc"
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -133,6 +145,179 @@ async def get_due_leads(client: httpx.AsyncClient, slots: int, active_campaign_i
     return r.json()
 
 
+async def get_due_fresh_leads(client: httpx.AsyncClient, slots: int, active_campaign_ids: list[str]) -> list[dict]:
+    """
+    Fetch fresh_cta leads ready to call — same filter shape as get_due_leads(),
+    just funnel_type='fresh_cta' hardcoded instead of the FUNNEL_TYPE env var.
+    Kept as its own function rather than folded into get_due_leads() so each
+    funnel's selection logic stays independently readable (same principle as
+    get_active_campaign_ids() being its own function rather than inlined).
+
+    NOTE on "oldest-fire_at-due first": outbound_leads has no fire_at column
+    of its own — that lives on scheduled_actions. promote_due_scheduled_actions()
+    processes due scheduled_actions oldest-fire_at-first and creates the
+    corresponding outbound_leads rows in that same order, so order=created_at.asc
+    here is a proxy for fire_at order, not a literal re-sort of it. If promotion
+    and dispatch ever drift out of the same tick, this proxy would drift too.
+    """
+    if not active_campaign_ids:
+        return []
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    campaign_in = ",".join(active_campaign_ids)
+    url = (
+        f"{SUPABASE_URL}/rest/v1/outbound_leads"
+        f"?tenant_id=eq.{TENANT_ID}"
+        f"&funnel_type=eq.fresh_cta"
+        f"&status=in.(pending,unanswered,mid_answered)"
+        f"&dnc=eq.false"
+        f"&visit_date_status=is.null"
+        f"&campaign_id=in.({campaign_in})"
+        f"&or=(cooldown_until.is.null,cooldown_until.lte.{now_iso})"
+        f"&order=created_at.asc"
+        f"&limit={slots}"
+    )
+    r = await client.get(url, headers=sb_headers())
+    if r.status_code != 200:
+        log.error(f"get_due_fresh_leads failed: {r.status_code} {r.text[:200]}")
+        return []
+    return r.json()
+
+
+async def promote_due_scheduled_actions(client: httpx.AsyncClient):
+    """
+    Promotes due scheduled_actions rows into outbound_leads so they become
+    callable. Does NOT dispatch calls itself — whatever this creates gets
+    picked up by get_due_fresh_leads() later in the SAME tick (see tick()).
+
+    OPEN QUESTIONS not resolved here, flagged rather than guessed at:
+      - scheduled_actions currently has 0 rows (checked live), so there's no
+        data to confirm whether ALL action_type values should promote to a
+        fresh_cta outbound_leads row, or only some. No action_type filter is
+        applied below — if this table is shared with other automations
+        (e.g. WhatsApp reminders), this needs a filter added.
+      - scheduled_actions has no tenant_id column (unlike every other table
+        this codebase writes to), so this query is tenant-agnostic — not
+        fixable from this side without a schema change.
+      - contacts has no `name` column (only id, phone, created_at — confirmed
+        via schema) — name is resolved via a separate lookup into `leads` by
+        contact_id, which may not have a matching row for every contact; if
+        not, name is left as "".
+    """
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = (
+        f"{SUPABASE_URL}/rest/v1/scheduled_actions"
+        f"?status=eq.pending"
+        f"&fire_at=lte.{now_iso}"
+        f"&order=fire_at.asc"
+    )
+    r = await client.get(url, headers=sb_headers())
+    if r.status_code != 200:
+        log.error(f"promote_due_scheduled_actions fetch failed: {r.status_code} {r.text[:200]}")
+        return
+    due = r.json()
+    if not due:
+        return
+
+    log.info(f"Promoting {len(due)} due scheduled_action(s)")
+
+    for action in due:
+        contact_id = action.get("contact_id")
+        if not contact_id:
+            # No identifier to flip anything with — contact_id is
+            # scheduled_actions' primary key, so a real row missing it should
+            # be structurally impossible. Logged rather than silently skipped
+            # in case it ever does happen; there's no other unique field on
+            # this table to PATCH against.
+            log.error("promote_due_scheduled_actions: due row has no contact_id — cannot flip status, skipping")
+            continue
+
+        _final_status = "fired"  # overwritten to "failed" below on either recoverable error
+
+        # Avoid duplicate promotion — skip creating a new outbound_leads row
+        # if one already exists for this contact (from this or any funnel).
+        existing = await client.get(
+            f"{SUPABASE_URL}/rest/v1/outbound_leads",
+            headers=sb_headers(),
+            params={"contact_id": f"eq.{contact_id}", "select": "id", "limit": "1"},
+        )
+        if existing.status_code == 200 and existing.json():
+            log.info(f"scheduled_action for contact {contact_id}: outbound_leads row already exists — marking fired, skipping create")
+        else:
+            phone   = None
+            name    = ""
+            product = None
+
+            c_r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/contacts",
+                headers=sb_headers(),
+                params={"id": f"eq.{contact_id}", "select": "phone", "limit": "1"},
+            )
+            if c_r.status_code == 200 and c_r.json():
+                phone = c_r.json()[0].get("phone")
+
+            # NOTE on product: `interested_in` is a guess among several equally
+            # plausible, equally-unpopulated leads columns (furniture_interest,
+            # selected_product_name, liked_product_1) — every one of the 45
+            # current leads rows has source='ai_call' (this codebase's own
+            # call-log linkage writer) and 0/45 populated on ANY of them, so
+            # this lookup returns None for every contact today regardless of
+            # which field name is used here. Whatever actually writes
+            # WhatsApp-sourced product interest — possibly not `leads` at all;
+            # `whatsapp_conversations` (raw per-message log, content/context
+            # jsonb, keyed by lead_id) exists as a candidate source but isn't
+            # queried here since task 4b scoped this to the leads/contacts
+            # join specifically — needs to land somewhere before this ever
+            # resolves to a real value.
+            l_r = await client.get(
+                f"{SUPABASE_URL}/rest/v1/leads",
+                headers=sb_headers(),
+                params={"contact_id": f"eq.{contact_id}", "select": "name,interested_in", "limit": "1"},
+            )
+            if l_r.status_code == 200 and l_r.json():
+                row     = l_r.json()[0]
+                name    = row.get("name") or ""
+                product = row.get("interested_in") or None
+
+            if not phone:
+                log.error(f"scheduled_action for contact {contact_id}: no resolvable phone via contacts — marking failed, skipping promotion")
+                _final_status = "failed"
+            else:
+                create_r = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/outbound_leads",
+                    headers=sb_headers(),
+                    json={
+                        "tenant_id":        TENANT_ID,
+                        "contact_id":       contact_id,
+                        "phone":            phone,
+                        "name":             name,
+                        "funnel_type":      "fresh_cta",
+                        "campaign_type":    "fresh_cta",
+                        "campaign_id":      FRESH_CTA_CAMPAIGN_ID,
+                        "product_interest": product,
+                        "status":           "pending",
+                    },
+                )
+                if create_r.status_code not in (200, 201):
+                    log.error(f"promote_due_scheduled_actions: create failed for contact {contact_id}: {create_r.status_code} {create_r.text[:200]}")
+                    _final_status = "failed"
+                else:
+                    log.info(f"Promoted scheduled_action → outbound_leads for contact {contact_id}")
+
+        # Flip regardless of branch above — created, already existed, or hit a
+        # recoverable error — so this contact's due action is never
+        # re-evaluated on a future tick. 'failed' (not 'fired') marks the two
+        # recoverable error cases for manual review, distinct from a real
+        # success or an already-existing lead.
+        flip_r = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/scheduled_actions?contact_id=eq.{contact_id}",
+            headers=sb_headers(),
+            json={"status": _final_status},
+        )
+        if flip_r.status_code not in (200, 204):
+            log.error(f"promote_due_scheduled_actions: failed to flip {_final_status} for contact {contact_id}: {flip_r.status_code}")
+
+
 async def get_wa_decline_leads(client: httpx.AsyncClient, slots: int, active_campaign_ids: list[str]) -> list[dict]:
     """
     Leads whose WhatsApp conversation ended in a decline — objection_type is set
@@ -194,11 +379,14 @@ async def schedule_retry_or_dnc(
     client: httpx.AsyncClient,
     lead_id: str,
     pickup_attempt_count: int,
+    funnel_type: str = None,
 ):
     """
-    Called ONLY for confirmed no-answer (cleanup_stuck_leads sweep).
-    Cadence: Day1, Day2, Day4, Day7 — 2 attempts/day (morning + evening).
-    After MAX_PICKUP_ATTEMPTS total unanswered attempts → dnc.
+    Called ONLY for confirmed no-answer (cleanup_stuck_leads sweep, or a
+    rejected /trigger-call dispatch).
+    Cadence is looked up from PICKUP_CADENCE by funnel_type (falling back to
+    DEFAULT_PICKUP_CADENCE for anything unrecognized, incl. None) — 2 attempts
+    per "day" (morning + evening) until max_attempts, then dnc.
 
     CAVEAT: gaps are relative to the previous attempt, not anchored to an
     absolute "lead's first attempt" timestamp (no such field exists in the
@@ -207,16 +395,20 @@ async def schedule_retry_or_dnc(
     in its intended window — if attempts get delayed across window boundaries
     this can drift.
     """
+    cadence       = PICKUP_CADENCE.get(funnel_type, PICKUP_CADENCE[DEFAULT_PICKUP_CADENCE])
+    pair_gap_days = cadence["pair_gap_days"]
+    max_attempts  = cadence["max_attempts"]
+
     new_count = pickup_attempt_count + 1
 
-    if new_count >= MAX_PICKUP_ATTEMPTS:
+    if new_count >= max_attempts:
         payload = {
             "status":               "dnc",
             "dnc":                  True,
             "pickup_attempt_count": new_count,
             "cooldown_until":       None,
         }
-        log.info(f"Lead {lead_id} → DNC after {new_count} unanswered attempts")
+        log.info(f"Lead {lead_id} ({funnel_type or DEFAULT_PICKUP_CADENCE}) → DNC after {new_count} unanswered attempts")
 
     elif new_count % 2 == 1:
         # Just completed a morning slot → next attempt is same-day evening
@@ -231,14 +423,14 @@ async def schedule_retry_or_dnc(
             "cooldown_until":       next_call.astimezone(timezone.utc).isoformat(),
         }
         log.info(
-            f"Lead {lead_id} unanswered (attempt {new_count}/{MAX_PICKUP_ATTEMPTS}) "
-            f"→ retry this evening"
+            f"Lead {lead_id} ({funnel_type or DEFAULT_PICKUP_CADENCE}) unanswered "
+            f"(attempt {new_count}/{max_attempts}) → retry this evening"
         )
 
     else:
         # Just completed an evening slot (pair done) → next pair's morning, N days out
         pair_index = new_count // 2
-        gap_days   = PICKUP_PAIR_GAP_DAYS.get(pair_index, 3)
+        gap_days   = pair_gap_days.get(pair_index, 3)
         next_call  = datetime.now(IST).replace(
             hour=PICKUP_MORNING_HOUR, minute=PICKUP_MORNING_MINUTE, second=0, microsecond=0
         ) + timedelta(days=gap_days)
@@ -248,8 +440,8 @@ async def schedule_retry_or_dnc(
             "cooldown_until":       next_call.astimezone(timezone.utc).isoformat(),
         }
         log.info(
-            f"Lead {lead_id} unanswered (attempt {new_count}/{MAX_PICKUP_ATTEMPTS}) "
-            f"→ retry in {gap_days} day(s), morning slot"
+            f"Lead {lead_id} ({funnel_type or DEFAULT_PICKUP_CADENCE}) unanswered "
+            f"(attempt {new_count}/{max_attempts}) → retry in {gap_days} day(s), morning slot"
         )
 
     url = f"{SUPABASE_URL}/rest/v1/outbound_leads?id=eq.{lead_id}"
@@ -273,6 +465,7 @@ async def fire_call(client: httpx.AsyncClient, lead: dict, wa_decline_confirm: b
         "to":       lead["phone"],
         "name":     lead.get("name") or "",
         "campaign": lead.get("campaign_type") or "",
+        "product":  lead.get("product_interest") or "",
     }
     if wa_decline_confirm:
         body["wa_decline_confirm"] = True
@@ -320,7 +513,7 @@ async def cleanup_stuck_leads(client: httpx.AsyncClient):
         f"?tenant_id=eq.{TENANT_ID}"
         f"&status=eq.in_progress"
         f"&last_called_at=lte.{now_iso}"
-        f"&select=id,pickup_attempt_count"
+        f"&select=id,pickup_attempt_count,funnel_type"
     )
     r = await client.get(url, headers=sb_headers())
     if r.status_code != 200 or not r.json():
@@ -328,10 +521,11 @@ async def cleanup_stuck_leads(client: httpx.AsyncClient):
     stuck = r.json()
     log.info(f"Cleaning up {len(stuck)} stuck in_progress lead(s)")
     for lead in stuck:
-        await schedule_retry_or_dnc(client, lead["id"], lead.get("pickup_attempt_count", 0))
+        await schedule_retry_or_dnc(client, lead["id"], lead.get("pickup_attempt_count", 0), lead.get("funnel_type"))
 
 
 async def tick(client: httpx.AsyncClient):
+    await promote_due_scheduled_actions(client)
     await cleanup_stuck_leads(client)
     if not is_calling_window():
         return
@@ -348,18 +542,30 @@ async def tick(client: httpx.AsyncClient):
         log.info("No active campaigns — skipping lead selection this tick")
         return
 
-    # Merge the normal pickup/no-date lane with the wa_decline-confirm lane.
-    # decline_leads is processed FIRST when de-duping so that a lead unlucky
-    # enough to match both (e.g. it didn't pick up its confirm call and fell
-    # back to status='unanswered', which also satisfies get_due_leads()) keeps
-    # the decline-confirm treatment on retry instead of silently reverting to
-    # a normal pickup-cadence call.
-    due_leads     = await get_due_leads(client, slots, active_campaign_ids)
-    decline_leads = await get_wa_decline_leads(client, slots, active_campaign_ids)
+    # Priority order: fresh_cta leads (time-sensitive, just promoted from
+    # scheduled_actions) get first claim on available slots. Whatever's left
+    # over fills from the existing reactivation lanes — wa_decline-confirm
+    # first (as before), then the normal pickup/no-date cadence — unchanged
+    # from the prior merge behavior, just now bounded by remaining_slots
+    # instead of the full slots count.
+    fresh_leads = await get_due_fresh_leads(client, slots, active_campaign_ids)
+
+    remaining_slots = slots - len(fresh_leads)
+    due_leads     = []
+    decline_leads = []
+    if remaining_slots > 0:
+        due_leads     = await get_due_leads(client, remaining_slots, active_campaign_ids)
+        decline_leads = await get_wa_decline_leads(client, remaining_slots, active_campaign_ids)
 
     seen  = set()
     leads = []
+    for lead in fresh_leads:
+        seen.add(lead["id"])
+        lead["_fresh_cta"] = True
+        leads.append(lead)
     for lead in decline_leads:
+        if lead["id"] in seen:
+            continue
         seen.add(lead["id"])
         lead["_wa_decline_confirm"] = True
         leads.append(lead)
@@ -391,7 +597,7 @@ async def tick(client: httpx.AsyncClient):
 
         if not success:
             # /trigger-call or Vobiz rejected — schedule retry
-            await schedule_retry_or_dnc(client, lead_id, pickup_attempt_count)
+            await schedule_retry_or_dnc(client, lead_id, pickup_attempt_count, lead.get("funnel_type"))
 
         # If success: Vobiz fires /hangup when call ends
         # webhook.py hangup handler updates outbound_leads status automatically
@@ -406,7 +612,9 @@ async def main():
     log.info(f"Funnel type : {FUNNEL_TYPE}")
     log.info(f"Concurrency : {CONCURRENCY_LIMIT} simultaneous calls")
     log.info(f"Window      : {CALL_START_HOUR}:00–{CALL_END_HOUR}:00 IST")
-    log.info(f"Pickup cadence: Day1/2/4/7, 2 attempts/day ({PICKUP_MORNING_HOUR}:{PICKUP_MORNING_MINUTE:02d} & {PICKUP_EVENING_HOUR}:{PICKUP_EVENING_MINUTE:02d} IST) → DNC after {MAX_PICKUP_ATTEMPTS}")
+    log.info(f"Pickup slots : {PICKUP_MORNING_HOUR}:{PICKUP_MORNING_MINUTE:02d} & {PICKUP_EVENING_HOUR}:{PICKUP_EVENING_MINUTE:02d} IST")
+    for _ft, _c in PICKUP_CADENCE.items():
+        log.info(f"Pickup cadence [{_ft}]: max {_c['max_attempts']} attempts, gaps {_c['pair_gap_days']}")
     log.info(f"Webhook base: {WEBHOOK_BASE_URL}")
     log.info(f"Poll every  : {POLL_INTERVAL}s")
     log.info("=" * 55)

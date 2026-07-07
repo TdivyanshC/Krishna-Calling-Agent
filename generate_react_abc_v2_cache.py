@@ -27,7 +27,7 @@ SPEAKER_MAP = {
 # FORCE_REGEN_ALL = True means every non-filler key gets regenerated on the
 # correct per-plan voice, regardless of whether its text changed. Necessary
 # because changing the voice mapping affects ALL keys, not just edited ones.
-FORCE_REGEN_ALL = True
+FORCE_REGEN_ALL = False
 FORCE_REGEN = set()  # unused when FORCE_REGEN_ALL is True
 
 # Keys removed from scripts — delete stale audio if present

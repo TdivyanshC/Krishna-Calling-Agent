@@ -1042,6 +1042,22 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 except Exception as he:
                     logger.error(f"[{call_uuid}] React hangup error: {he}")
             return
+        if session.campaign == "fresh_cta":
+            from webhook_reactivation import handle_fresh_cta_turn
+            should_continue = await handle_fresh_cta_turn(session, text or "", call_uuid)
+            session.is_priya_speaking = False
+            if not should_continue:
+                await asyncio.sleep(0.8)
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK},
+                        )
+                    logger.info(f"[{call_uuid}] Fresh CTA hangup sent")
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] Fresh CTA hangup error: {he}")
+            return
         # ── End reactivation routing ────────────────────────────────────────────
 
         if not text or len(text.strip()) < 2:
@@ -1222,6 +1238,8 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
     session.campaign       = _meta.get("campaign", "")
     session.customer_phone = _meta.get("to_phone", "")
     session.customer_name  = _meta.get("name", "")
+    session.wa_decline_confirm = _meta.get("wa_decline_confirm", False)
+    session.fresh_product   = _meta.get("product", "")
     session.started_at     = datetime.now(timezone.utc).isoformat()
     if session.campaign:
         logger.info(f"[{call_uuid}] Campaign: {session.campaign}")
@@ -1376,7 +1394,9 @@ async def answer_outbound(request: Request):
     name      = request.query_params.get("name", "")
     to_phone  = form.get("To", "")
     campaign  = request.query_params.get("campaign", "")
-    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'}")
+    product   = request.query_params.get("product", "")
+    wa_decline_confirm = request.query_params.get("wa_decline_confirm", "") in ("1", "true", "True")
+    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'} | wa_decline_confirm={wa_decline_confirm} | product={product or '-'}")
 
     # Store for ws_handler (campaign, phone, name all needed before WS opens)
     _session_meta[call_uuid] = {
@@ -1384,6 +1404,8 @@ async def answer_outbound(request: Request):
         "to_phone":  to_phone,
         "campaign":  campaign,
         "name":      name,
+        "wa_decline_confirm": wa_decline_confirm,
+        "product":   product,
     }
 
     lead_id = await get_or_create_lead_id(to_phone, name)
@@ -1411,7 +1433,14 @@ async def answer_outbound(request: Request):
         )
     elif campaign in ("reactivation", "react_a", "react_b", "react_c"):
         prefix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}.get(campaign, "ra")
-        greet_key = f"{prefix}_greet_main" if campaign in ("react_a", "react_b", "react_c") else "react_greet_main"
+        if wa_decline_confirm:
+            # WA-decline-confirm lane: play the confirm line instead of the
+            # plan's usual opener, then fall straight into this same plan's
+            # existing GREETING state — handle_reactivation_turn is unchanged,
+            # it just receives a different opening line to react to.
+            greet_key = "wa_decline_confirm_greet"
+        else:
+            greet_key = f"{prefix}_greet_main" if campaign in ("react_a", "react_b", "react_c") else "react_greet_main"
         audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
         if campaign in ("react_a", "react_b", "react_c"):
             _ug_suffix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}[campaign]
@@ -1419,6 +1448,14 @@ async def answer_outbound(request: Request):
         else:
             universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
         play_tag = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
+    elif campaign == "fresh_cta":
+        # No universal-greeting prefix line — fresh_greet_* already opens with
+        # its own "Namaste ji". Product comes from the promoted outbound_leads
+        # row's product_interest, threaded through /trigger-call -> query param.
+        _product_key = product if product in ("bed", "sofa", "wardrobe", "dining") else None
+        greet_key = f"fresh_greet_{_product_key}" if _product_key else "fresh_greet_generic"
+        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
+        play_tag = f"<Play>{audio_url}</Play>"
     else:
         greeting  = OUTBOUND_GREETING.format(name=name) if name else INBOUND_GREETING
         audio_url = await save_audio(greeting, f"greeting_out_{call_uuid}")
@@ -1509,11 +1546,15 @@ async def trigger_call(request: Request):
     to       = body.get("to", "")
     name     = body.get("name", "")
     campaign = body.get("campaign", "")
+    product  = body.get("product", "")
+    wa_decline_confirm = body.get("wa_decline_confirm", False)
     if not to:
         return {"error": "Missing 'to'"}
 
     campaign_param = f"&campaign={campaign}" if campaign else ""
-    answer_url = f"{BASE_URL}/answer-outbound?name={name}{campaign_param}"
+    decline_param  = "&wa_decline_confirm=1" if wa_decline_confirm else ""
+    product_param  = f"&product={product}" if product else ""
+    answer_url = f"{BASE_URL}/answer-outbound?name={name}{campaign_param}{decline_param}{product_param}"
 
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(
@@ -1548,6 +1589,8 @@ async def hangup(request: Request):
         session.campaign       = _meta.get("campaign", "")
         session.customer_phone = _meta.get("to_phone", "")
         session.customer_name  = _meta.get("name", "")
+        session.wa_decline_confirm = _meta.get("wa_decline_confirm", False)
+        session.fresh_product = _meta.get("product", "")
         if session.campaign:
             logger.info(f"[{call_uuid}] Hangup: restored campaign={session.campaign} from meta")
 

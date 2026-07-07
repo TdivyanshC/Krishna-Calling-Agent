@@ -151,6 +151,66 @@ async def handle_followup_wa_turn(session, transcript: str, call_uuid: str) -> b
     return False
 
 
+async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> bool:
+    """
+    fresh_cta funnel — no GREETING/OFFER/CTA buildup, enters directly at the
+    appointment-ask equivalent. The greeting itself (fresh_greet_{product} /
+    fresh_greet_generic) is played by /answer-outbound's initial <Play>,
+    before the stream opens — NOT from inside this handler. respond() only
+    ever invokes a turn handler in reaction to detected customer speech, so a
+    self-playing "first turn" here would be unreachable the same way
+    handle_followup_wa_turn's is for real (streamed) calls. Every invocation
+    of this function is processing the customer's reply to that already-played
+    line.
+    """
+    if not hasattr(session, "dnc"):
+        session.dnc = False
+        session.react_state = "APPOINTMENT"  # for call_summaries reporting only — no other state exists in this funnel
+
+    session.turn_count = getattr(session, "turn_count", 0) + 1
+    t       = transcript.strip() if transcript else ""
+    intents = detect_intents(t) if t else []
+
+    logger.info(f"[{call_uuid}] fresh_cta transcript='{t[:60]}' intents={intents}")
+
+    if not hasattr(session, "conversation"):
+        session.conversation = []
+    if t:
+        session.conversation.append(("user", t))
+
+    # Hard decline — "not_interested" per spec; "dnc" folded in too (same
+    # top-priority hard-stop convention every other handler in this file uses).
+    # Reuses react_a's cached DNC audio directly — no new fresh_dnc key, per spec.
+    if "dnc" in intents or "not_interested" in intents:
+        session.dnc = True
+        await play_key(call_uuid, "ra_dnc", session)
+        return False
+
+    # Same confirmation detection as the APPOINTMENT state in
+    # handle_reactivation_turn, verbatim — mirrored, not reimplemented.
+    _has_digit      = any(ch.isdigit() for ch in t)
+    _has_day_suffix = "डे" in t and len(t.split()) >= 2
+    if "appointment_confirm" in intents or _has_digit or _has_day_suffix:
+        session.appointment_confirmed = True
+        session.visit_date_raw_text   = t
+        session.lead_tier_override    = "hot"
+        session.lead_score_override   = 85
+        await play_key(call_uuid, "fresh_appointment_confirmed", session)
+        await asyncio.sleep(3.0)
+        return False
+
+    # Objection/hesitant/unclear (busy, expensive, online_cheaper, sochna_hai,
+    # trust_issue — see task 2 note) and anything else non-matching: exactly
+    # one reask, same appt_reask_tried pattern as the APPOINTMENT state.
+    if not getattr(session, "appt_reask_tried", False):
+        session.appt_reask_tried = True
+        await play_key(call_uuid, "fresh_objection", session)
+        return True
+
+    await play_key(call_uuid, "fresh_no_date_close", session)
+    return False
+
+
 async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> bool:
     if not hasattr(session, "react_state"):
         session.react_state   = "GREETING"

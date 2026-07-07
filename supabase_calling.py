@@ -637,13 +637,24 @@ async def finalize_call(
 
                 _new_count = _current_count + 1
                 if _new_count >= 3:
-                    # Stop scheduling calls — NOT a rejection, so dnc stays false.
-                    # Still eligible for WhatsApp-only follow-up outside this pipeline.
-                    _ol_payload = {
-                        "status":                 "no_date_stalled",
-                        "answered_no_date_count": _new_count,
-                    }
-                    logger.info(f"[{call_uuid}] outbound_lead → no_date_stalled ({_new_count}/3)")
+                    if _campaign == "fresh_cta":
+                        # fresh_cta diverges intentionally from reactivation's
+                        # softer terminal state — 3 answered-no-date calls on
+                        # a fresh lead goes straight to dnc, not a WA-only lane.
+                        _ol_payload = {
+                            "status":                 "dnc",
+                            "dnc":                    True,
+                            "answered_no_date_count": _new_count,
+                        }
+                        logger.info(f"[{call_uuid}] outbound_lead → dnc (fresh_cta, {_new_count}/3 no-date)")
+                    else:
+                        # Stop scheduling calls — NOT a rejection, so dnc stays false.
+                        # Still eligible for WhatsApp-only follow-up outside this pipeline.
+                        _ol_payload = {
+                            "status":                 "no_date_stalled",
+                            "answered_no_date_count": _new_count,
+                        }
+                        logger.info(f"[{call_uuid}] outbound_lead → no_date_stalled ({_new_count}/3)")
                 else:
                     _ol_payload = {
                         "status":                 "mid_answered",
