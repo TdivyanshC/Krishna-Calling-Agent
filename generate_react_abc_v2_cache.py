@@ -22,6 +22,7 @@ SPEAKER_MAP = {
     "rb": "shreya",
     "rc": "simran",
     "shared": "shreya",
+    "fresh": "simran",
 }
 
 # FORCE_REGEN_ALL = True means every non-filler key gets regenerated on the
