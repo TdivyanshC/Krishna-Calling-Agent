@@ -467,7 +467,36 @@ async def finalize_call(
         except Exception as e:
             logger.error(f"update call_log error: {e}")
 
-        # 2. INSERT call_summaries  ← phone column added here
+        # 2. Ensure call_logs row exists (unanswered calls never hit /answer-outbound)
+        try:
+            r_check = await client.get(
+                f"{SUPABASE_URL}/rest/v1/call_logs?call_uuid=eq.{call_uuid}&select=call_uuid",
+                headers=_headers(),
+            )
+            if r_check.status_code == 200 and r_check.json() == []:
+                # No call_logs row — insert minimal one so FK constraint passes
+                r_ins = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/call_logs",
+                    headers=_headers(),
+                    json={
+                        "call_uuid":        call_uuid,
+                        "tenant_id":        TENANT_ID,
+                        "to_number":        phone_clean.replace("+", ""),
+                        "from_number":      "+919262102426",
+                        "direction":        "outbound",
+                        "caller_name":      getattr(session, "customer_name", None),
+                        "status":           "unanswered",
+                        "duration_seconds": 0,
+                        "hangup_cause":     hangup_cause,
+                    },
+                )
+                if r_ins.status_code not in (200, 201):
+                    logger.error(f"[{call_uuid}] minimal call_log insert failed {r_ins.status_code}: {r_ins.text[:200]}")
+                logger.info(f"[{call_uuid}] minimal call_log inserted for unanswered call")
+        except Exception as e:
+            logger.error(f"call_log pre-check error: {e}")
+
+        # 3. INSERT call_summaries  ← phone column added here
         try:
             summary_payload = {
                 "call_uuid":         call_uuid,
@@ -510,6 +539,16 @@ async def finalize_call(
                 headers=_headers(),
                 json=summary_payload,
             )
+            if r2.status_code == 409 or "23503" in r2.text:
+                # FK violation — call_logs row for this call_uuid isn't committed yet
+                # (can happen on very short/unanswered calls). Retry once after a beat.
+                logger.warning(f"[{call_uuid}] call_summary insert hit FK violation — retrying in 1s")
+                await asyncio.sleep(1)
+                r2 = await client.post(
+                    f"{SUPABASE_URL}/rest/v1/call_summaries",
+                    headers=_headers(),
+                    json=summary_payload,
+                )
             if r2.status_code not in (200, 201):
                 logger.error(f"insert call_summary failed {r2.status_code}: {r2.text[:200]}")
             else:
