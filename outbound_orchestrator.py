@@ -61,7 +61,7 @@ PICKUP_EVENING_HOUR, PICKUP_EVENING_MINUTE = 19, 30   # 19:30 IST
 #   pair_gap_days[p] = days until pair p+1's morning slot, once pair p just finished
 #   max_attempts     = total unanswered attempts before dnc
 PICKUP_CADENCE = {
-    "reactivation": {"pair_gap_days": {1: 1, 2: 2, 3: 3}, "max_attempts": 8},  # Day1/2/4/7, 8 max
+    "reactivation": {"pair_gap_days": {1: 1, 2: 1}, "max_attempts": 6},  # 2x/day, 3 days straight, 6 max
     "fresh_cta":    {"pair_gap_days": {1: 1, 2: 1},       "max_attempts": 6},  # Day1/2/3, 6 max
 }
 DEFAULT_PICKUP_CADENCE = "reactivation"  # used for any funnel_type not in PICKUP_CADENCE (incl. None)
@@ -223,14 +223,32 @@ async def promote_due_scheduled_actions(client: httpx.AsyncClient):
 
     for action in due:
         contact_id = action.get("contact_id")
+        row_phone  = action.get("phone")
+        flip_field = "contact_id"
+        flip_value = contact_id
+
         if not contact_id:
-            # No identifier to flip anything with — contact_id is
-            # scheduled_actions' primary key, so a real row missing it should
-            # be structurally impossible. Logged rather than silently skipped
-            # in case it ever does happen; there's no other unique field on
-            # this table to PATCH against.
-            log.error("promote_due_scheduled_actions: due row has no contact_id — cannot flip status, skipping")
-            continue
+            if not row_phone:
+                log.error("promote_due_scheduled_actions: due row has no contact_id and no phone — cannot resolve or flip, skipping")
+                continue
+            up_r = await client.post(
+                f"{SUPABASE_URL}/rest/v1/contacts",
+                headers={**sb_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+                params={"on_conflict": "phone"},
+                json={"phone": row_phone},
+            )
+            if up_r.status_code not in (200, 201) or not up_r.json():
+                log.error(f"promote_due_scheduled_actions: failed to resolve/create contact for phone {row_phone}: {up_r.status_code} {up_r.text[:200]}")
+                await client.patch(
+                    f"{SUPABASE_URL}/rest/v1/scheduled_actions?phone=eq.{row_phone}&status=eq.pending",
+                    headers=sb_headers(),
+                    json={"status": "failed"},
+                )
+                continue
+            contact_id = up_r.json()[0]["id"]
+            flip_field = "phone"
+            flip_value = row_phone
+            log.info(f"promote_due_scheduled_actions: resolved contact_id {contact_id} from phone {row_phone}")
 
         _final_status = "fired"  # overwritten to "failed" below on either recoverable error
 
@@ -310,7 +328,7 @@ async def promote_due_scheduled_actions(client: httpx.AsyncClient):
         # recoverable error cases for manual review, distinct from a real
         # success or an already-existing lead.
         flip_r = await client.patch(
-            f"{SUPABASE_URL}/rest/v1/scheduled_actions?contact_id=eq.{contact_id}",
+            f"{SUPABASE_URL}/rest/v1/scheduled_actions?{flip_field}=eq.{flip_value}",
             headers=sb_headers(),
             json={"status": _final_status},
         )
@@ -461,11 +479,17 @@ async def fire_call(client: httpx.AsyncClient, lead: dict, wa_decline_confirm: b
     that same plan's existing GREETING state — see /answer-outbound.
     """
     url  = f"{WEBHOOK_BASE_URL}/trigger-call"
+    # answered_no_date_count tracks real answered conversations with no date yet:
+    # 0/None = Call 1 (existing ra_/rb_/rc_ routing), 1 = Call 2 (Ritu), 2 = Call 3
+    # (Simran) — capped at 3 since >=3 already exits the cadence before reaching here.
+    _no_date_count = lead.get("answered_no_date_count") or 0
+    call_cycle = min(_no_date_count + 1, 3)
     body = {
-        "to":       lead["phone"],
-        "name":     lead.get("name") or "",
-        "campaign": lead.get("campaign_type") or "",
-        "product":  lead.get("product_interest") or "",
+        "to":         lead["phone"],
+        "name":       lead.get("name") or "",
+        "campaign":   lead.get("campaign_type") or "",
+        "product":    lead.get("product_interest") or "",
+        "call_cycle": call_cycle,
     }
     if wa_decline_confirm:
         body["wa_decline_confirm"] = True

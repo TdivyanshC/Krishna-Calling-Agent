@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, "/home/voiceagent/voice-ai")
 import httpx
 
-from knowledge_react_abc import REACT_A_SCRIPT, REACT_B_SCRIPT, REACT_C_SCRIPT, SHARED_SCRIPT
+from knowledge_react_abc import REACT_A_SCRIPT, REACT_B_SCRIPT, REACT_C_SCRIPT, SHARED_SCRIPT, FRESH_CTA_SCRIPT, CALL2_SCRIPT, CALL3_SCRIPT
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 STATIC_DIR = "/home/voiceagent/voice-ai/tts-cache/static"
@@ -23,6 +23,8 @@ SPEAKER_MAP = {
     "rc": "simran",
     "shared": "shreya",
     "fresh": "simran",
+    "c2": "ritu",
+    "c3": "simran",
 }
 
 # FORCE_REGEN_ALL = True means every non-filler key gets regenerated on the
@@ -101,6 +103,9 @@ async def main():
         ("Plan B (shreya)",  REACT_B_SCRIPT),
         ("Plan C (simran)",  REACT_C_SCRIPT),
         ("Shared (shreya)",  SHARED_SCRIPT),
+        ("Fresh CTA (simran)", FRESH_CTA_SCRIPT),
+        ("Call 2 (ritu)",    CALL2_SCRIPT),
+        ("Call 3 (simran)",  CALL3_SCRIPT),
     ]
 
     ok = fail = skip = 0

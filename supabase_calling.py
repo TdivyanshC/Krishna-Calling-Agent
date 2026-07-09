@@ -485,7 +485,7 @@ async def finalize_call(
                         "from_number":      "+919262102426",
                         "direction":        "outbound",
                         "caller_name":      getattr(session, "customer_name", None),
-                        "status":           "unanswered",
+                        "status":           "no_answer",
                         "duration_seconds": 0,
                         "hangup_cause":     hangup_cause,
                     },

@@ -11,7 +11,7 @@ import time
 
 import httpx
 
-from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_INTENTS
+from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_INTENTS, CALL2_SCRIPT, CALL3_SCRIPT
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +70,14 @@ async def _vobiz_play(call_uuid: str, audio_url: str) -> bool:
         return False
 
 async def play_key(call_uuid: str, key: str, session=None, log_transcript: bool = True) -> bool:
-    campaign = getattr(session, "campaign", "react_a") if session else "react_a"
-    script   = get_script(campaign)
+    call_cycle = getattr(session, "call_cycle", None) if session else None
+    if call_cycle == "2":
+        script = CALL2_SCRIPT
+    elif call_cycle == "3":
+        script = CALL3_SCRIPT
+    else:
+        campaign = getattr(session, "campaign", "react_a") if session else "react_a"
+        script   = get_script(campaign)
 
     if session is not None and log_transcript:
         if not hasattr(session, "conversation"):
@@ -393,6 +399,9 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         for intent_name, plan_key in qa_keys.items():
             if intent_name in intents:
                 await play_key(call_uuid, plan_key, session)
+                if intent_name in ("ask_valuation", "ask_delivery"):
+                    # q_valuation already ends by asking for a date — don't re-ask via appointment_ask
+                    return True
                 await play_key(call_uuid, f"{p}_appointment_ask", session, log_transcript=False)
                 return True
         if "not_interested" in intents or "busy" in intents:
@@ -429,4 +438,254 @@ async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> 
         return False
 
     logger.warning(f"[{call_uuid}] Unknown react_state: {state}")
+    return False
+
+
+async def handle_call2_turn(session, transcript: str, call_uuid: str) -> bool:
+    """
+    Call 2 (Ritu) — second real conversation with this lead, no date given yet.
+    States: GREETING -> WA_CHECK -> DATE_ASK. Simpler graph than react_a/b/c —
+    no PRESENT_OFFER/WHATSAPP_CTA buildup, since the lead already heard the
+    offer on Call 1.
+    """
+    if not hasattr(session, "c2_state"):
+        session.c2_state      = "GREETING"
+        session.silence_count = 0
+        session.wa_sent       = False
+        session.dnc           = False
+
+    session.turn_count = getattr(session, "turn_count", 0) + 1
+    state   = session.c2_state
+    t       = transcript.strip() if transcript else ""
+    intents = detect_intents(t) if t else []
+
+    logger.info(f"[{call_uuid}] call2 state={state} transcript='{t[:60]}' intents={intents}")
+
+    # ── Silence ───────────────────────────────────────────────────────────────
+    if not t:
+        session.silence_count += 1
+        if session.silence_count >= 3:
+            await play_key(call_uuid, "c2_close_busy", session)
+            await fire_whatsapp(session, call_uuid)
+            return False
+        return True
+
+    session.silence_count = 0
+    if not hasattr(session, "conversation"):
+        session.conversation = []
+    session.conversation.append(("user", t))
+
+    # ── Machine/IVR detection — hang up immediately ───────────────────────────
+    _machine_phrases = [
+        "please stay on the line", "stay on the line", "प्लीज स्टे ऑन द लाइन",
+        "your call is being connected", "please hold", "all our representatives",
+        "press 1", "press 2", "दबाएं", "के लिए 1", "के लिए 2",
+        "voicemail", "leave a message", "not available right now",
+        "the number you have dialed", "is not reachable", "switched off",
+        "स्विच्ड ऑफ", "नॉट रीचेबल", "उपलब्ध नहीं",
+    ]
+    if any(phrase.lower() in t.lower() for phrase in _machine_phrases):
+        logger.info(f"[{call_uuid}] Machine/IVR detected — hanging up")
+        session.machine_detected = True
+        return False
+
+    # ── DNC — no dedicated c2_dnc key, reuses ra_dnc's cached audio (same
+    # precedent as handle_fresh_cta_turn) ───────────────────────────────────────
+    if "dnc" in intents:
+        session.dnc = True
+        await play_key(call_uuid, "ra_dnc", session)
+        return False
+
+    # ── GREETING ──────────────────────────────────────────────────────────────
+    if state == "GREETING":
+        if "confusion_who" in intents:
+            await play_key(call_uuid, "c2_greet_reorient", session)
+            session.c2_state = "WA_CHECK"
+            await play_key(call_uuid, "c2_wa_check", session, log_transcript=False)
+            return True
+        if "busy" in intents:
+            await play_key(call_uuid, "c2_close_busy", session)
+            return False
+        if "not_interested" in intents:
+            await play_key(call_uuid, "c2_obj_not_interested", session)
+            await play_key(call_uuid, "c2_close_declined", session)
+            return False
+        # Default (neutral or impatient) — no "annoyed, hurry up" shortcut;
+        # both go straight to WA_CHECK.
+        session.c2_state = "WA_CHECK"
+        await play_key(call_uuid, "c2_wa_check", session)
+        return True
+
+    # ── WA_CHECK ──────────────────────────────────────────────────────────────
+    if state == "WA_CHECK":
+        session.c2_state = "DATE_ASK"
+        if "wa_no_whatsapp" in intents or "wa_diff_number" in intents:
+            await play_key(call_uuid, "c2_invite_resend", session)
+            await fire_whatsapp(session, call_uuid)
+            return True
+        # Default — assume they saw it. Both invite_seen and invite_resend
+        # already contain the date question, so no separate date-ask turn.
+        await play_key(call_uuid, "c2_invite_seen", session)
+        return True
+
+    # ── DATE_ASK ──────────────────────────────────────────────────────────────
+    if state == "DATE_ASK":
+        # Resolve a pending price objection first — this turn is the customer's
+        # yes/no reply to c2_obj_price, and takes precedence over the general
+        # not_interested/expensive branches below.
+        if getattr(session, "c2_price_asked", False):
+            session.c2_price_asked = False
+            if "not_interested" in intents:
+                await play_key(call_uuid, "c2_close_price", session)
+                return False
+            await play_key(call_uuid, "c2_date_direct", session)
+            return True
+
+        if "not_interested" in intents:
+            await play_key(call_uuid, "c2_obj_not_interested", session)
+            await play_key(call_uuid, "c2_close_declined", session)
+            return False
+        if "expensive" in intents or "online_cheaper" in intents:
+            await play_key(call_uuid, "c2_obj_price", session)
+            session.c2_price_asked = True
+            return True
+        if "trust_issue" in intents:
+            # c2_obj_scam re-asks the date itself — stay in DATE_ASK.
+            await play_key(call_uuid, "c2_obj_scam", session)
+            return True
+
+        # Same confirmation detection as APPOINTMENT state in
+        # handle_reactivation_turn, verbatim.
+        _has_digit      = any(ch.isdigit() for ch in t)
+        _has_day_suffix = "डे" in t and len(t.split()) >= 2
+        if "appointment_confirm" in intents or _has_digit or _has_day_suffix:
+            session.appointment_confirmed = True
+            session.visit_date_raw_text   = t
+            session.lead_tier_override    = "hot"
+            session.lead_score_override   = 85
+            await play_key(call_uuid, "c2_booked", session)
+            await asyncio.sleep(3.0)
+            return False
+
+        # Vague — one reask, then close.
+        if not getattr(session, "c2_reask_tried", False):
+            session.c2_reask_tried = True
+            await play_key(call_uuid, "c2_date_reask", session)
+            return True
+        await play_key(call_uuid, "c2_close_thinking", session)
+        return False
+
+    logger.warning(f"[{call_uuid}] Unknown c2_state: {state}")
+    return False
+
+
+async def handle_call3_turn(session, transcript: str, call_uuid: str) -> bool:
+    """
+    Call 3 (Simran) — third real conversation, last attempt before the
+    existing answered_no_date_count>=3 cadence exit. States: GREETING ->
+    DECISION_DATE, one reask, no re-argue on price objection (per script design).
+    """
+    if not hasattr(session, "c3_state"):
+        session.c3_state      = "GREETING"
+        session.silence_count = 0
+        session.wa_sent       = False
+        session.dnc           = False
+
+    session.turn_count = getattr(session, "turn_count", 0) + 1
+    state   = session.c3_state
+    t       = transcript.strip() if transcript else ""
+    intents = detect_intents(t) if t else []
+
+    logger.info(f"[{call_uuid}] call3 state={state} transcript='{t[:60]}' intents={intents}")
+
+    # ── Silence ───────────────────────────────────────────────────────────────
+    if not t:
+        session.silence_count += 1
+        if session.silence_count >= 3:
+            await play_key(call_uuid, "c3_close_busy", session)
+            await fire_whatsapp(session, call_uuid)
+            return False
+        return True
+
+    session.silence_count = 0
+    if not hasattr(session, "conversation"):
+        session.conversation = []
+    session.conversation.append(("user", t))
+
+    # ── Machine/IVR detection — hang up immediately ───────────────────────────
+    _machine_phrases = [
+        "please stay on the line", "stay on the line", "प्लीज स्टे ऑन द लाइन",
+        "your call is being connected", "please hold", "all our representatives",
+        "press 1", "press 2", "दबाएं", "के लिए 1", "के लिए 2",
+        "voicemail", "leave a message", "not available right now",
+        "the number you have dialed", "is not reachable", "switched off",
+        "स्विच्ड ऑफ", "नॉट रीचेबल", "उपलब्ध नहीं",
+    ]
+    if any(phrase.lower() in t.lower() for phrase in _machine_phrases):
+        logger.info(f"[{call_uuid}] Machine/IVR detected — hanging up")
+        session.machine_detected = True
+        return False
+
+    # ── DNC — no dedicated c3_dnc key, reuses ra_dnc's cached audio (same
+    # precedent as handle_fresh_cta_turn) ───────────────────────────────────────
+    if "dnc" in intents:
+        session.dnc = True
+        await play_key(call_uuid, "ra_dnc", session)
+        return False
+
+    # ── GREETING ──────────────────────────────────────────────────────────────
+    if state == "GREETING":
+        if "confusion_who" in intents:
+            await play_key(call_uuid, "c3_greet_reorient", session)
+            session.c3_state = "DECISION_DATE"
+            await play_key(call_uuid, "c3_decision_date", session, log_transcript=False)
+            return True
+        if "not_interested" in intents:
+            # NOTE: no dedicated "hostile" intent exists in REACT_ABC_INTENTS —
+            # reusing not_interested here is a deliberate simplification, flagged
+            # back rather than inventing a new intent category.
+            await play_key(call_uuid, "c3_greet_hostile", session)
+            return False
+        if "busy" in intents:
+            await play_key(call_uuid, "c3_close_busy", session)
+            return False
+        session.c3_state = "DECISION_DATE"
+        await play_key(call_uuid, "c3_decision_date", session)
+        return True
+
+    # ── DECISION_DATE ─────────────────────────────────────────────────────────
+    if state == "DECISION_DATE":
+        if "not_interested" in intents:
+            await play_key(call_uuid, "c3_declined", session)
+            return False
+        if "expensive" in intents or "online_cheaper" in intents:
+            # No re-argue, no return path — deliberate, per script design.
+            await play_key(call_uuid, "c3_obj_price", session)
+            return False
+        if "trust_issue" in intents:
+            # c3_obj_scam re-asks the date itself — stay in DECISION_DATE.
+            await play_key(call_uuid, "c3_obj_scam", session)
+            return True
+
+        _has_digit      = any(ch.isdigit() for ch in t)
+        _has_day_suffix = "डे" in t and len(t.split()) >= 2
+        if "appointment_confirm" in intents or _has_digit or _has_day_suffix:
+            session.appointment_confirmed = True
+            session.visit_date_raw_text   = t
+            session.lead_tier_override    = "hot"
+            session.lead_score_override   = 85
+            await play_key(call_uuid, "c3_booked", session)
+            await asyncio.sleep(3.0)
+            return False
+
+        # Vague (including busy/sochna_hai, which fall through to here for
+        # this state) — one reask, then final close.
+        if not getattr(session, "c3_reask_tried", False):
+            session.c3_reask_tried = True
+            await play_key(call_uuid, "c3_date_reask", session)
+            return True
+        await play_key(call_uuid, "c3_close_thinking_final", session)
+        return False
+
+    logger.warning(f"[{call_uuid}] Unknown c3_state: {state}")
     return False

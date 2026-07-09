@@ -994,7 +994,9 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
     t0 = time.time()
     try:
         # ── Fire filler PRE-STT for reactivation — customer hears instantly
-        if session.campaign in ("reactivation", "react_a", "react_b", "react_c"):
+        # (skipped for call_cycle 2/3 — those use their own script regardless
+        # of what session.campaign says, and this filler is keyed off campaign)
+        if session.campaign in ("reactivation", "react_a", "react_b", "react_c") and getattr(session, "call_cycle", None) not in ("2", "3"):
             import random as _random
             _react_st = getattr(session, "react_state", "GREETING")
             _filler_map = {"GREETING": [2, 6], "PRESENT_OFFER": [3, 4], "WHATSAPP_CTA": [1, 5], "CLOSE": [3, 6]}
@@ -1009,6 +1011,40 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             session.is_priya_speaking = True
             logger.info(f"[{call_uuid}] PRE-STT filler fired → {_filler_url}")
         text = await transcribe(ulaw_to_wav(audio))
+
+        # ── call_cycle 2/3 override — takes priority over campaign routing ─────
+        if getattr(session, "call_cycle", None) == "2":
+            from webhook_reactivation import handle_call2_turn
+            should_continue = await handle_call2_turn(session, text or "", call_uuid)
+            session.is_priya_speaking = False
+            if not should_continue:
+                await asyncio.sleep(0.8)
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK},
+                        )
+                    logger.info(f"[{call_uuid}] Call2 hangup sent")
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] Call2 hangup error: {he}")
+            return
+        elif getattr(session, "call_cycle", None) == "3":
+            from webhook_reactivation import handle_call3_turn
+            should_continue = await handle_call3_turn(session, text or "", call_uuid)
+            session.is_priya_speaking = False
+            if not should_continue:
+                await asyncio.sleep(0.8)
+                try:
+                    async with httpx.AsyncClient(timeout=8) as hc:
+                        await hc.delete(
+                            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK},
+                        )
+                    logger.info(f"[{call_uuid}] Call3 hangup sent")
+                except Exception as he:
+                    logger.error(f"[{call_uuid}] Call3 hangup error: {he}")
+            return
 
         # ── Reactivation campaign: all turn logic lives in the engine ──────────
         if session.campaign == "followup_wa":
@@ -1240,6 +1276,7 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
     session.customer_name  = _meta.get("name", "")
     session.wa_decline_confirm = _meta.get("wa_decline_confirm", False)
     session.fresh_product   = _meta.get("product", "")
+    session.call_cycle      = _meta.get("call_cycle", "")
     session.started_at     = datetime.now(timezone.utc).isoformat()
     if session.campaign:
         logger.info(f"[{call_uuid}] Campaign: {session.campaign}")
@@ -1365,6 +1402,82 @@ async def answer_call(request: Request):
 
     # Inbound call
     logger.info(f"[{call_uuid}] Inbound from {from_num}")
+
+    # Check if the caller is a known reactivation lead — if so, skip the
+    # generic inbound greeting and drop straight into their already-assigned
+    # plan's existing GREETING state (same audio/script as the outbound
+    # reactivation flow, just entered inbound). Numbers stored in
+    # outbound_leads.phone always carry a '+' prefix, but Vobiz's inbound
+    # "From" field does not — so match both forms.
+    react_lead = None
+    if from_num:
+        try:
+            _from_variants = {from_num, from_num[1:] if from_num.startswith("+") else f"+{from_num}"}
+            _phone_or = ",".join(f"phone.eq.{v}" for v in _from_variants)
+            sb_url = os.getenv("SUPABASE_URL")
+            sb_key = os.getenv("SUPABASE_SERVICE_KEY")
+            _hdrs  = {"apikey": sb_key, "Authorization": f"Bearer {sb_key}"}
+            async with httpx.AsyncClient(timeout=3) as _c:
+                _r = await _c.get(
+                    f"{sb_url}/rest/v1/outbound_leads",
+                    headers=_hdrs,
+                    params={
+                        "or":          f"({_phone_or})",
+                        "funnel_type": "eq.reactivation_customer",
+                        "tenant_id":   "eq.krishna_furniture",
+                        "select":      "id,name,campaign_type",
+                        "limit":       "1",
+                    },
+                )
+                if _r.status_code == 200 and _r.json():
+                    react_lead = _r.json()[0]
+        except Exception as _e:
+            logger.error(f"[{call_uuid}] inbound reactivation lookup error: {_e}")
+
+    if react_lead:
+        _react_campaign = react_lead.get("campaign_type") or "reactivation"
+        _react_name     = react_lead.get("name") or ""
+        logger.info(f"[{call_uuid}] Inbound reactivation lead → {from_num} | name={_react_name} | campaign={_react_campaign}")
+        _session_meta[call_uuid] = {
+            "direction": "inbound",
+            "to_phone":  from_num,
+            "campaign":  _react_campaign,
+            "name":      _react_name,
+        }
+        lead_id = await get_or_create_lead_id(from_num, _react_name)
+        asyncio.create_task(insert_call_log(
+            call_uuid   = call_uuid,
+            from_number = from_num,
+            to_number   = "+919262102426",
+            direction   = "inbound",
+            caller_name = _react_name,
+            lead_id     = lead_id,
+        ))
+
+        # Same universal-greeting + "{p}_greet_main" pattern as the outbound
+        # reactivation branch in /answer-outbound — copied, not reinvented.
+        if _react_campaign in ("react_a", "react_b", "react_c"):
+            _p = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}[_react_campaign]
+            greet_key = f"{_p}_greet_main"
+            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_{_p}_hi.wav"
+        else:
+            greet_key = "react_greet_main"
+            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
+        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
+        play_tag  = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
+
+        return PlainTextResponse(
+            f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
+            f'action="https://voice.thesocialhood.in/recording-done"/>'
+            f'{play_tag}'
+            f'<Stream keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000" streamTimeout="86400">'
+            f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream>'
+            f'</Response>',
+            media_type="application/xml"
+        )
+
+    # Generic inbound — unknown caller, or a fresh lead never assigned a
+    # reactivation plan. Unchanged from prior behavior.
     _session_meta[call_uuid] = {"direction": "inbound", "to_phone": ""}
     lead_id = await get_or_create_lead_id(from_num)
     asyncio.create_task(insert_call_log(
@@ -1395,8 +1508,9 @@ async def answer_outbound(request: Request):
     to_phone  = form.get("To", "")
     campaign  = request.query_params.get("campaign", "")
     product   = request.query_params.get("product", "")
+    call_cycle = request.query_params.get("call_cycle", "")
     wa_decline_confirm = request.query_params.get("wa_decline_confirm", "") in ("1", "true", "True")
-    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'} | wa_decline_confirm={wa_decline_confirm} | product={product or '-'}")
+    logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'} | call_cycle={call_cycle or '1'} | wa_decline_confirm={wa_decline_confirm} | product={product or '-'}")
 
     # Store for ws_handler (campaign, phone, name all needed before WS opens)
     _session_meta[call_uuid] = {
@@ -1406,6 +1520,7 @@ async def answer_outbound(request: Request):
         "name":      name,
         "wa_decline_confirm": wa_decline_confirm,
         "product":   product,
+        "call_cycle": call_cycle,
     }
 
     lead_id = await get_or_create_lead_id(to_phone, name)
@@ -1418,7 +1533,17 @@ async def answer_outbound(request: Request):
         lead_id     = lead_id,
     ))
 
-    if campaign == "followup_wa":
+    if call_cycle == "2":
+        # Call 2 (Ritu) — second real conversation with this lead, no date yet.
+        # Overrides campaign_type entirely, per call_cycle routing.
+        audio_url = f"{BASE_URL}/audio/static/c2_greet_main_hi.wav"
+        play_tag  = f"<Play>{audio_url}</Play>"
+    elif call_cycle == "3":
+        # Call 3 (Simran) — third real conversation, last attempt before the
+        # existing answered_no_date_count>=3 cadence exit.
+        audio_url = f"{BASE_URL}/audio/static/c3_greet_main_hi.wav"
+        play_tag  = f"<Play>{audio_url}</Play>"
+    elif campaign == "followup_wa":
         audio_url = f"{BASE_URL}/audio/static/react_followup_wa_hi.wav"
         # Fire WA immediately — no stream needed for followup
         asyncio.create_task(_fire_followup_wa(call_uuid, name, to_phone))
@@ -1523,14 +1648,32 @@ async def recording_done(request: Request):
                     headers=hdrs,
                     json={"recording_url": recording_url, "recording_duration": int(duration)}
                 )
-            # call_summaries row may not exist yet — patch after delay
+            # call_summaries row may not exist yet (it's only INSERTed at hangup,
+            # and real calls routinely run past the old fixed 20s delay) — poll
+            # until the row appears, then patch the recording_url onto it.
             async def _save_recording_to_summary(uuid, url, surl, skey):
-                await asyncio.sleep(20)
+                h = {"apikey": skey, "Authorization": f"Bearer {skey}", "Content-Type": "application/json", "Prefer": "return=minimal"}
+                poll_interval = 10
+                max_wait      = 180
+                waited        = 0
                 try:
-                    h = {"apikey": skey, "Authorization": f"Bearer {skey}", "Content-Type": "application/json", "Prefer": "return=minimal"}
                     async with httpx.AsyncClient(timeout=5) as c2:
-                        await c2.patch(f"{surl}/rest/v1/call_summaries?call_uuid=eq.{uuid}", headers=h, json={"recording_url": url})
-                    logger.info(f"[{uuid}] Recording URL saved to call_summaries (delayed)")
+                        while waited < max_wait:
+                            await asyncio.sleep(poll_interval)
+                            waited += poll_interval
+                            r_check = await c2.get(
+                                f"{surl}/rest/v1/call_summaries",
+                                headers=h,
+                                params={"call_uuid": f"eq.{uuid}", "select": "call_uuid", "limit": "1"},
+                            )
+                            if r_check.status_code == 200 and r_check.json():
+                                await c2.patch(f"{surl}/rest/v1/call_summaries?call_uuid=eq.{uuid}", headers=h, json={"recording_url": url})
+                                logger.info(f"[{uuid}] Recording URL saved to call_summaries (delayed, after {waited}s)")
+                                return
+                        logger.error(
+                            f"[{uuid}] call_summaries row never appeared within {max_wait}s — "
+                            f"recording_url NOT copied to call_summaries (still safe in call_logs.recording_url)"
+                        )
                 except Exception as ex:
                     logger.error(f"[{uuid}] Failed delayed recording save: {ex}")
             asyncio.create_task(_save_recording_to_summary(call_uuid, proxied_url, sb_url, sb_key))
@@ -1547,14 +1690,16 @@ async def trigger_call(request: Request):
     name     = body.get("name", "")
     campaign = body.get("campaign", "")
     product  = body.get("product", "")
+    call_cycle = body.get("call_cycle")
     wa_decline_confirm = body.get("wa_decline_confirm", False)
     if not to:
         return {"error": "Missing 'to'"}
 
-    campaign_param = f"&campaign={campaign}" if campaign else ""
-    decline_param  = "&wa_decline_confirm=1" if wa_decline_confirm else ""
-    product_param  = f"&product={product}" if product else ""
-    answer_url = f"{BASE_URL}/answer-outbound?name={name}{campaign_param}{decline_param}{product_param}"
+    campaign_param   = f"&campaign={campaign}" if campaign else ""
+    decline_param    = "&wa_decline_confirm=1" if wa_decline_confirm else ""
+    product_param    = f"&product={product}" if product else ""
+    call_cycle_param = f"&call_cycle={call_cycle}" if call_cycle else ""
+    answer_url = f"{BASE_URL}/answer-outbound?name={name}{campaign_param}{decline_param}{product_param}{call_cycle_param}"
 
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.post(
