@@ -311,9 +311,7 @@ DIRECT_KEYWORD_MAP: dict[str, str] = {
 
     # ── Timing / Hours ────────────────────────────────────────────────────────
     "timing":            "timing_hours",
-    "time":              "timing_hours",
     "khula":             "timing_hours",
-    "band":              "timing_hours",
     "sunday":            "timing_hours",
     "sunday open":       "timing_hours",
     "kab khulta":        "timing_hours",
@@ -322,7 +320,6 @@ DIRECT_KEYWORD_MAP: dict[str, str] = {
     "कब खुलता":          "timing_hours",
     "कब आऊं":            "timing_hours",
     "खुला":              "timing_hours",
-    "बंद":               "timing_hours",
     "रविवार":            "timing_hours",
     "संडे":              "timing_hours",
     "सुबह":              "timing_hours",
@@ -639,6 +636,52 @@ def get_response(raw_text: str, session=None) -> tuple[str | None, str]:
 
     logger.info(f"FAQ:{cid} ({confidence:.0%}) | '{text[:40]}'")
     return script, f"faq:{cid}"
+
+
+def match_faq_detour(text: str, session=None) -> tuple[str | None, str | None]:
+    """
+    Direct-keyword + fuzzy FAQ match only — no noise/greeting/product gates.
+    Used by state_machine() to answer off-script questions asked mid-qualification
+    (QUALIFY_PRODUCT/BUDGET/URGENCY) without derailing the funnel state.
+    Returns (response_text, faq_id) or (None, None) if nothing matches.
+    """
+    fired = getattr(session, "intents_fired", set()) if session else set()
+
+    direct_cat_id = get_direct_match(text)
+    if direct_cat_id and direct_cat_id not in fired:
+        response = DEVANAGARI_OVERRIDES.get(direct_cat_id)
+        if response:
+            if session and hasattr(session, "intents_fired"):
+                session.intents_fired.add(direct_cat_id)
+            logger.info(f"DETOUR DIRECT MATCH:{direct_cat_id} | '{text[:40]}'")
+            return response, direct_cat_id
+
+    matcher = _get_matcher()
+    result = matcher.match(text)
+    if result is None:
+        return None, None
+
+    cat = result["category"]
+    cid = cat["id"]
+    if cid in fired:
+        return None, None
+
+    if session and hasattr(session, "intents_fired"):
+        session.intents_fired.add(cid)
+
+    if cid in DEVANAGARI_OVERRIDES:
+        script = DEVANAGARI_OVERRIDES[cid]
+    else:
+        script = cat["response"]["script"]
+        cond = cat["response"].get("conditional_responses", {})
+        if cond:
+            for key, alt in cond.items():
+                if key.lower() in text:
+                    script = alt
+                    break
+
+    logger.info(f"DETOUR FAQ:{cid} ({result['confidence']:.0%}) | '{text[:40]}'")
+    return script, cid
 
 
 def build_llm_context() -> str:
