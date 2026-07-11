@@ -96,14 +96,43 @@ REACT_C_SCRIPT = {
 FRESH_CTA_SCRIPT = {
     # All lines voiced as Simran. No dnc key here on purpose — hard decline
     # reuses ra_dnc's existing cached audio directly (see handle_fresh_cta_turn).
-    "fresh_greet_bed": "Namaste ji, aapse WhatsApp par baat hui thi — aap bed dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
-    "fresh_greet_sofa": "Namaste ji, aapse WhatsApp par baat hui thi — aap sofa dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
-    "fresh_greet_wardrobe": "Namaste ji, aapse WhatsApp par baat hui thi — aap wardrobe dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
-    "fresh_greet_dining": "Namaste ji, aapse WhatsApp par baat hui thi — aap dining set dekhna chahte the na? Bas yeh confirm karna tha ki store visit ke liye kaunsa din aapke liye convenient rahega?",
-    "fresh_greet_generic": "Namaste ji, maine dekha aap Krishna Furniture mein interested the. Bas yeh jaanna chahti thi ki store visit ke liye kaunsa din aapke liye convenient rahega?",
-    "fresh_objection": "Ji sir, main aapke budget ke hisaab se achhe options dikha dungi. Store par aur bhi designs dekhne ko milenge, aur best possible discount bhi karwa dungi. Ek baar visit karke dekh lijiye — konsa din sahi rahega?",
+    "fresh_greet_bed": "Namaste ji, hamari WhatsApp par baat hui thi — aap bed dekhna chahte the. Toh kab aana hoga store par? Main aapko wahi milungi.",
+    "fresh_greet_sofa": "Namaste ji, hamari WhatsApp par baat hui thi — aap sofa dekhna chahte the. Toh kab aana hoga store par? Main aapko wahi milungi.",
+    "fresh_greet_wardrobe": "Namaste ji, hamari WhatsApp par baat hui thi — aap wardrobe dekhna chahte the. Toh kab aana hoga store par? Main aapko wahi milungi.",
+    "fresh_greet_dining": "Namaste ji, hamari WhatsApp par baat hui thi — aap dining set dekhna chahte the. Toh kab aana hoga store par? Main aapko wahi milungi.",
+    "fresh_greet_generic": "Namaste ji, hamari WhatsApp par baat hui thi Krishna Furniture ke baare mein. Toh kab aana hoga store par? Main aapko wahi milungi.",
+    "fresh_objection": "Ji sir, bahut ache ache designs aaye hain, aapko zaroor pasand aaenge. Main WhatsApp par bhej deti hoon, lekin ek baar store aake dekhna zyada sahi rahega — waha ache se samajh aa jaayega. Kab aa sakte hain?",
     "fresh_appointment_confirmed": "Bahut badhiya ji! Main aapka appointment confirm kar deti hoon. Hamari team aapka intezar karegi. Jaldi milte hain!",
     "fresh_no_date_close": "Koi baat nahi ji. Main aapko WhatsApp par kuch achhe options bhej deti hoon — aap aaram se dekh lijiye, phir jab convenient ho tab visit plan kar lenge.",
+    "fresh_soft_defer": "Okay ji, aap WhatsApp par hi confirm kar dena, main aur options bhej deti hoon.",
+    "fresh_location_info": "Humare stores Gurugram, Delhi, Noida, aur Faridabad mein hain. WhatsApp par aapko exact address aur Google Maps link bhej deti hoon — aap wahi se date confirm kar dena, phir wahi milenge hum.",
+    "fresh_greet_who_bed": "Ji, Krishna Furniture se — humari WhatsApp par baat hui thi bed ke baare mein. Kab aana hoga store par?",
+    "fresh_greet_who_sofa": "Ji, Krishna Furniture se — humari WhatsApp par baat hui thi sofa ke baare mein. Kab aana hoga store par?",
+    "fresh_greet_who_wardrobe": "Ji, Krishna Furniture se — humari WhatsApp par baat hui thi wardrobe ke baare mein. Kab aana hoga store par?",
+    "fresh_greet_who_dining": "Ji, Krishna Furniture se — humari WhatsApp par baat hui thi dining set ke baare mein. Kab aana hoga store par?",
+    "fresh_greet_who_generic": "Ji, Krishna Furniture se — humari WhatsApp par baat hui thi. Kab aana hoga store par?",
+}
+
+# fresh_cta Call 2/3 greetings — same Simran voice as Call 1 (fresh_ prefix, no
+# voice change between cycles for this funnel, per earlier decision). Only the
+# opening line differs per cycle; fresh_objection/fresh_appointment_confirmed/
+# fresh_no_date_close/fresh_soft_defer/fresh_location_info (in FRESH_CTA_SCRIPT
+# above) are reused as-is across all 3 cycles — handle_fresh_cta_turn's turn
+# logic is identical regardless of which greeting played.
+FRESH_CALL2_SCRIPT = {
+    "fresh_c2_greet_bed": "Namaste ji, Priya bol rahi hoon Krishna Furniture se. Pichhli baar humne baat ki thi bed ke baare mein — bas confirm karna tha, kaunsa din aana hoga store par?",
+    "fresh_c2_greet_sofa": "Namaste ji, Priya bol rahi hoon Krishna Furniture se. Pichhli baar humne baat ki thi sofa ke baare mein — bas confirm karna tha, kaunsa din aana hoga store par?",
+    "fresh_c2_greet_wardrobe": "Namaste ji, Priya bol rahi hoon Krishna Furniture se. Pichhli baar humne baat ki thi wardrobe ke baare mein — bas confirm karna tha, kaunsa din aana hoga store par?",
+    "fresh_c2_greet_dining": "Namaste ji, Priya bol rahi hoon Krishna Furniture se. Pichhli baar humne baat ki thi dining set ke baare mein — bas confirm karna tha, kaunsa din aana hoga store par?",
+    "fresh_c2_greet_generic": "Namaste ji, Priya bol rahi hoon Krishna Furniture se. Pichhli baar humne baat ki thi — bas confirm karna tha, kaunsa din aana hoga store par?",
+}
+
+FRESH_CALL3_SCRIPT = {
+    "fresh_c3_greet_bed": "Namaste ji, Priya, Krishna Furniture se. Bed ke baare mein do baar baat ho chuki hai — bas ek aakhri baar poochna tha, kaunsa din aa sakte hain aap?",
+    "fresh_c3_greet_sofa": "Namaste ji, Priya, Krishna Furniture se. Sofa ke baare mein do baar baat ho chuki hai — bas ek aakhri baar poochna tha, kaunsa din aa sakte hain aap?",
+    "fresh_c3_greet_wardrobe": "Namaste ji, Priya, Krishna Furniture se. Wardrobe ke baare mein do baar baat ho chuki hai — bas ek aakhri baar poochna tha, kaunsa din aa sakte hain aap?",
+    "fresh_c3_greet_dining": "Namaste ji, Priya, Krishna Furniture se. Dining set ke baare mein do baar baat ho chuki hai — bas ek aakhri baar poochna tha, kaunsa din aa sakte hain aap?",
+    "fresh_c3_greet_generic": "Namaste ji, Priya, Krishna Furniture se. Do baar baat ho chuki hai — bas ek aakhri baar poochna tha, kaunsa din aa sakte hain aap?",
 }
 
 CALL2_SCRIPT = {

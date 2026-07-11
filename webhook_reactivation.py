@@ -8,6 +8,7 @@ import asyncio
 import logging
 import os
 import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -24,6 +25,9 @@ N8N_WA_URL      = os.getenv(
     "N8N_WA_WEBHOOK_URL",
     "https://n8n-production-aed7.up.railway.app/webhook/voice-call-complete",
 )
+SUPABASE_URL         = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+TENANT_ID            = os.getenv("TENANT_ID", "krishna_furniture")
 
 _http_client: httpx.AsyncClient | None = None
 
@@ -114,14 +118,52 @@ async def fire_whatsapp(session, call_uuid: str) -> bool:
     name     = getattr(session, "customer_name", "") or "Customer"
     campaign = getattr(session, "campaign", "react_a")
     payload  = {"phone": phone, "name": name, "offer": "25+25% exchange offer", "campaign": "reactivation"}
+    ok = False
     try:
         async with httpx.AsyncClient(timeout=8) as client:
             r = await client.post(N8N_WA_URL, json=payload)
         logger.info(f"[{call_uuid}] WA trigger → {r.status_code} phone={phone} campaign={campaign}")
-        return r.status_code < 300
+        ok = r.status_code < 300
     except Exception as exc:
         logger.error(f"[{call_uuid}] WA trigger failed: {exc}")
-        return False
+
+    if ok:
+        await _mark_wa_sent(session, call_uuid)
+
+    return ok
+
+
+async def _mark_wa_sent(session, call_uuid: str) -> None:
+    """
+    Persists wa_sent/wa_sent_at on the outbound_leads row for this call —
+    fire_whatsapp() previously only set session.wa_sent in-memory, so the DB
+    columns (which already existed in the schema) were never populated.
+    Matched by phone + tenant_id, same pattern supabase_calling.py's own
+    outbound_leads PATCHes use (see finalize_call()).
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return
+    raw_phone = getattr(session, "customer_phone", "")  # outbound_leads.phone keeps the '+' prefix
+    if not raw_phone:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/outbound_leads"
+                f"?phone=eq.{raw_phone.replace('+', '%2B')}&tenant_id=eq.{TENANT_ID}",
+                headers={
+                    "apikey":        SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type":  "application/json",
+                },
+                json={
+                    "wa_sent":    True,
+                    "wa_sent_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+        logger.info(f"[{call_uuid}] outbound_lead → wa_sent=True phone={raw_phone}")
+    except Exception as exc:
+        logger.error(f"[{call_uuid}] wa_sent persist error: {exc}")
 
 
 def detect_intents(transcript: str) -> list[str]:
@@ -184,6 +226,13 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     if t:
         session.conversation.append(("user", t))
 
+    # Same product-key derivation /answer-outbound uses to pick the initial
+    # greeting (session.fresh_product is the raw query-param string threaded
+    # through via _session_meta — not pre-validated, so re-check it here
+    # exactly the same way rather than trusting it's one of the 4 known values).
+    _raw_product = getattr(session, "fresh_product", "") or ""
+    _product_key = _raw_product if _raw_product in ("bed", "sofa", "wardrobe", "dining") else None
+
     # Hard decline — "not_interested" per spec; "dnc" folded in too (same
     # top-priority hard-stop convention every other handler in this file uses).
     # Reuses react_a's cached DNC audio directly — no new fresh_dnc key, per spec.
@@ -205,19 +254,68 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
         await asyncio.sleep(3.0)
         return False
 
-    # Objection/hesitant/unclear (busy, expensive, online_cheaper, sochna_hai,
-    # trust_issue — see task 2 note) and anything else non-matching: exactly
-    # one reask, same appt_reask_tried pattern as the APPOINTMENT state.
+    # Soft, no-push exit — "busy right now" / "let me think and get back to you".
+    # Distinct from the general objection catch-all below: no reask, no pressure,
+    # straight to WhatsApp and end the call gracefully.
+    if "busy" in intents or "sochna_hai" in intents:
+        await play_key(call_uuid, "fresh_soft_defer", session)
+        await fire_whatsapp(session, call_uuid)
+        return False
+
+    # Confusion about who's calling / where from — reorient with the same
+    # WhatsApp-followup framing the greeting itself used, then wait for their
+    # reply (a date, another question, or still confused — which falls through
+    # to the general reask/objection path below on the next turn, unchanged).
+    if "confusion_who" in intents:
+        _key = f"fresh_greet_who_{_product_key}" if _product_key else "fresh_greet_who_generic"
+        await play_key(call_uuid, _key, session)
+        return True
+
+    # Location ask — one-shot response covering all 5 real showrooms (Gurugram x2,
+    # Delhi, Noida, Faridabad) without naming any of them individually; full address
+    # + Maps link goes over WhatsApp instead, per this codebase's established
+    # "never speak a full street address on a call" convention. No follow-up city
+    # question, no further date prompt — WhatsApp is where they confirm from here.
+    if "ask_location" in intents:
+        await play_key(call_uuid, "fresh_location_info", session)
+        await fire_whatsapp(session, call_uuid)
+        return False
+
+    # General objection/hesitant/unclear catch-all (stock questions, "WhatsApp
+    # options weren't great", expensive, online_cheaper, trust_issue, anything else
+    # non-matching): exactly one reask, same appt_reask_tried pattern as the
+    # APPOINTMENT state.
     if not getattr(session, "appt_reask_tried", False):
         session.appt_reask_tried = True
         await play_key(call_uuid, "fresh_objection", session)
         return True
 
     await play_key(call_uuid, "fresh_no_date_close", session)
+    await fire_whatsapp(session, call_uuid)
     return False
 
 
 async def handle_reactivation_turn(session, transcript: str, call_uuid: str) -> bool:
+    """
+    Timing wrapper — records the same session.turn_latencies / first_reply_ts
+    fields the fresh_lead pipeline (webhook.py respond()) records, so
+    call_summaries.avg_response_latency / first_response_latency are populated
+    for react_a/react_b/reactivation calls too. Actual turn logic is unchanged,
+    in _handle_reactivation_turn_impl below.
+    """
+    _t0 = time.time()
+    should_continue = await _handle_reactivation_turn_impl(session, transcript, call_uuid)
+    _latency = round(time.time() - _t0, 3)
+    if not hasattr(session, "turn_latencies"):
+        session.turn_latencies = []
+    session.turn_latencies.append(_latency)
+    if getattr(session, "first_reply_ts", None) is None:
+        session.first_reply_ts = _latency
+    logger.info(f"[{call_uuid}] React turn latency {_latency:.2f}s")
+    return should_continue
+
+
+async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: str) -> bool:
     if not hasattr(session, "react_state"):
         session.react_state   = "GREETING"
         session.silence_count = 0

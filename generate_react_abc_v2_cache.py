@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, "/home/voiceagent/voice-ai")
 import httpx
 
-from knowledge_react_abc import REACT_A_SCRIPT, REACT_B_SCRIPT, REACT_C_SCRIPT, SHARED_SCRIPT, FRESH_CTA_SCRIPT, CALL2_SCRIPT, CALL3_SCRIPT
+from knowledge_react_abc import REACT_A_SCRIPT, REACT_B_SCRIPT, REACT_C_SCRIPT, SHARED_SCRIPT, FRESH_CTA_SCRIPT, CALL2_SCRIPT, CALL3_SCRIPT, FRESH_CALL2_SCRIPT, FRESH_CALL3_SCRIPT
 
 SARVAM_API_KEY = os.getenv("SARVAM_API_KEY", "")
 STATIC_DIR = "/home/voiceagent/voice-ai/tts-cache/static"
@@ -106,6 +106,8 @@ async def main():
         ("Fresh CTA (simran)", FRESH_CTA_SCRIPT),
         ("Call 2 (ritu)",    CALL2_SCRIPT),
         ("Call 3 (simran)",  CALL3_SCRIPT),
+        ("Fresh CTA Call 2 (simran)", FRESH_CALL2_SCRIPT),
+        ("Fresh CTA Call 3 (simran)", FRESH_CALL3_SCRIPT),
     ]
 
     ok = fail = skip = 0

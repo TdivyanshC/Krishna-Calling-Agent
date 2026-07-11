@@ -19,7 +19,7 @@ import uvicorn
 import httpx
 from dotenv import load_dotenv
 from groq import Groq
-from knowledge import get_response as kb_response, build_llm_context
+from knowledge import get_response as kb_response, build_llm_context, match_faq_detour
 
 load_dotenv("/home/voiceagent/voice-ai/.env")
 from supabase_calling import insert_call_log, finalize_call, get_or_create_lead_id
@@ -777,6 +777,14 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             session.conversation.append(("assistant", reply))
             return reply, "qualify_budget"
         else:
+            # Off-script detour: try FAQ/intent match before treating this as
+            # "product not understood". Doesn't touch state — qualification
+            # resumes on the next turn as if this turn was a detour.
+            faq_reply, faq_id = match_faq_detour(text_fixed, session)
+            if faq_reply:
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", faq_reply))
+                return faq_reply, f"faq:{faq_id}"
             # Product not understood — clarify warmly then re-ask
             already_asked = getattr(session, "product_ask_count", 0)
             session.product_ask_count = already_asked + 1
@@ -802,6 +810,14 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             session.slots["product"] = product
             logger.info(f"[{call_uuid}] Product switched {old_product} → {product} during QUALIFY_BUDGET")
         budget = extract_budget(text_fixed) or extract_budget(text_raw)
+        if not budget:
+            # Off-script detour: try FAQ/intent match before treating this as a
+            # vague/not-understood budget answer. State stays QUALIFY_BUDGET.
+            faq_reply, faq_id = match_faq_detour(text_fixed, session)
+            if faq_reply:
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", faq_reply))
+                return faq_reply, f"faq:{faq_id}"
         if budget:
             session.lead["budget"] = budget.strip(".,!? ।")
             session.slots["budget"] = budget.strip(".,!? ।")
@@ -825,7 +841,16 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
         return reply, "qualify_urgency" if budget else "ask_budget"
 
     elif state == "QUALIFY_URGENCY":
-        urgency = extract_urgency(text_fixed) or extract_urgency(text_raw) or text_raw.strip()
+        urgency = extract_urgency(text_fixed) or extract_urgency(text_raw)
+        if not urgency:
+            # Off-script detour: try FAQ/intent match before falling back to
+            # accepting the raw utterance as the urgency answer verbatim.
+            faq_reply, faq_id = match_faq_detour(text_fixed, session)
+            if faq_reply:
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", faq_reply))
+                return faq_reply, f"faq:{faq_id}"
+            urgency = text_raw.strip()
         session.lead["urgency"] = urgency.strip(".,!? ।")
         session.slots["urgency"] = urgency.strip(".,!? ।")
         session.state = "WRAP_UP"
@@ -915,7 +940,12 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
         session.conversation.append(("assistant", reply or ""))
         return reply, source
 
-    return None, "done"
+    logger.warning(
+        f"[{call_uuid}] STATE FALLTHROUGH — no branch produced a reply | "
+        f"session={session.call_uuid} | state={state} | "
+        f"text_raw={text_raw!r} | text_fixed={text_fixed!r}"
+    )
+    return llm_reply(text_fixed, session, call_uuid)
 
 
 def llm_reply(text: str, session, call_uuid: str) -> tuple[str | None, str]:
@@ -1013,7 +1043,12 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         text = await transcribe(ulaw_to_wav(audio))
 
         # ── call_cycle 2/3 override — takes priority over campaign routing ─────
-        if getattr(session, "call_cycle", None) == "2":
+        # fresh_cta is the one exception: it has its own call_cycle-aware
+        # greeting (see /answer-outbound) but IDENTICAL turn logic across all
+        # 3 cycles (handle_fresh_cta_turn) — so it deliberately skips this
+        # override and falls through to the campaign=="fresh_cta" dispatch
+        # below, same as call_cycle 1. Every other campaign is unaffected.
+        if getattr(session, "call_cycle", None) == "2" and session.campaign != "fresh_cta":
             from webhook_reactivation import handle_call2_turn
             should_continue = await handle_call2_turn(session, text or "", call_uuid)
             session.is_priya_speaking = False
@@ -1029,7 +1064,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 except Exception as he:
                     logger.error(f"[{call_uuid}] Call2 hangup error: {he}")
             return
-        elif getattr(session, "call_cycle", None) == "3":
+        elif getattr(session, "call_cycle", None) == "3" and session.campaign != "fresh_cta":
             from webhook_reactivation import handle_call3_turn
             should_continue = await handle_call3_turn(session, text or "", call_uuid)
             session.is_priya_speaking = False
@@ -1509,6 +1544,9 @@ async def answer_outbound(request: Request):
     campaign  = request.query_params.get("campaign", "")
     product   = request.query_params.get("product", "")
     call_cycle = request.query_params.get("call_cycle", "")
+    # Used by fresh_cta's greeting selection across all 3 call cycles below —
+    # computed once here rather than re-derived per cycle.
+    _product_key = product if product in ("bed", "sofa", "wardrobe", "dining") else None
     wa_decline_confirm = request.query_params.get("wa_decline_confirm", "") in ("1", "true", "True")
     logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'} | call_cycle={call_cycle or '1'} | wa_decline_confirm={wa_decline_confirm} | product={product or '-'}")
 
@@ -1533,15 +1571,29 @@ async def answer_outbound(request: Request):
         lead_id     = lead_id,
     ))
 
-    if call_cycle == "2":
+    if call_cycle == "2" and campaign != "fresh_cta":
         # Call 2 (Ritu) — second real conversation with this lead, no date yet.
         # Overrides campaign_type entirely, per call_cycle routing.
         audio_url = f"{BASE_URL}/audio/static/c2_greet_main_hi.wav"
         play_tag  = f"<Play>{audio_url}</Play>"
-    elif call_cycle == "3":
+    elif call_cycle == "3" and campaign != "fresh_cta":
         # Call 3 (Simran) — third real conversation, last attempt before the
         # existing answered_no_date_count>=3 cadence exit.
         audio_url = f"{BASE_URL}/audio/static/c3_greet_main_hi.wav"
+        play_tag  = f"<Play>{audio_url}</Play>"
+    elif call_cycle == "2" and campaign == "fresh_cta":
+        # fresh_cta Call 2 — same Simran voice as Call 1, product-aware
+        # follow-up greeting. Turn logic afterward is unchanged: it falls
+        # through to the same campaign=="fresh_cta" dispatch in respond()
+        # that Call 1 and Call 3 both use — handle_fresh_cta_turn doesn't
+        # vary by call_cycle, only the opening line does.
+        greet_key = f"fresh_c2_greet_{_product_key}" if _product_key else "fresh_c2_greet_generic"
+        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
+        play_tag  = f"<Play>{audio_url}</Play>"
+    elif call_cycle == "3" and campaign == "fresh_cta":
+        # fresh_cta Call 3 — same pattern as Call 2 above, final-attempt tone.
+        greet_key = f"fresh_c3_greet_{_product_key}" if _product_key else "fresh_c3_greet_generic"
+        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
         play_tag  = f"<Play>{audio_url}</Play>"
     elif campaign == "followup_wa":
         audio_url = f"{BASE_URL}/audio/static/react_followup_wa_hi.wav"
@@ -1577,7 +1629,7 @@ async def answer_outbound(request: Request):
         # No universal-greeting prefix line — fresh_greet_* already opens with
         # its own "Namaste ji". Product comes from the promoted outbound_leads
         # row's product_interest, threaded through /trigger-call -> query param.
-        _product_key = product if product in ("bed", "sofa", "wardrobe", "dining") else None
+        # This is call_cycle 1/None only — 2/3 are handled above.
         greet_key = f"fresh_greet_{_product_key}" if _product_key else "fresh_greet_generic"
         audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
         play_tag = f"<Play>{audio_url}</Play>"

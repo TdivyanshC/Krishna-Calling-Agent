@@ -70,6 +70,16 @@ POLL_INTERVAL = 20   # seconds
 
 FRESH_CTA_CAMPAIGN_ID = "8fab0334-6d8c-4b71-be72-9d170c8ad3fc"
 
+# Cutoff for detect_and_schedule_fresh_leads(): only contacts created AFTER
+# this process started are eligible for the new 5-hour-first-call detector.
+# Captured once at import time (≈ deploy/restart time), not recomputed per
+# tick or per calendar day — deliberately excludes the pre-existing backlog
+# of old contacts (53/73 at the time this was written) that have no
+# outbound_leads row today; backfilling those would immediately queue real
+# calls to people who messaged days ago, not "5 hours ago." Anything older
+# than this cutoff is simply never touched by this detector.
+FRESH_LEAD_DETECTOR_STARTED_AT = datetime.now(timezone.utc)
+
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
 
@@ -336,6 +346,171 @@ async def promote_due_scheduled_actions(client: httpx.AsyncClient):
             log.error(f"promote_due_scheduled_actions: failed to flip {_final_status} for contact {contact_id}: {flip_r.status_code}")
 
 
+async def detect_and_schedule_fresh_leads(client: httpx.AsyncClient):
+    """
+    Detects brand-new WhatsApp contacts — rows in `contacts` with no matching
+    `outbound_leads` row yet, from ANY funnel_type/source — and schedules
+    their first fresh_cta call for exactly 5 hours after the contact was
+    created, clamped to the 10:00-22:00 IST calling window.
+
+    This is a NEW, deterministic path this codebase fully owns. It does NOT
+    replace promote_due_scheduled_actions() above, which keeps running
+    unchanged for whatever n8n still schedules via scheduled_actions. Both
+    paths write into the same outbound_leads table and are mutually
+    exclusive by construction: the "no matching outbound_leads row" check
+    below is the same existence check promote_due_scheduled_actions() already
+    does before creating its own row — whichever path gets to a given
+    contact first, the other finds a row already exists and skips it. No
+    conflict, no duplicate calls, no ordering dependency between the two.
+
+    Only contacts created AFTER FRESH_LEAD_DETECTOR_STARTED_AT (this
+    process's start time) are eligible — see that constant's comment for why
+    the pre-existing backlog is deliberately excluded rather than backfilled.
+
+    Query technique: a single PostgREST embed + `is.null` filter expresses
+    the LEFT JOIN / NOT EXISTS pattern in one request (verified live against
+    this schema — outbound_leads.contact_id's FK to contacts.id is detected
+    by PostgREST), rather than the per-row existence-check loop
+    promote_due_scheduled_actions() uses above (that loop pre-dates this
+    function and was written against scheduled_actions rows one at a time;
+    no need to match that shape here when a single query does the job).
+    """
+    cutoff_iso = FRESH_LEAD_DETECTOR_STARTED_AT.strftime("%Y-%m-%dT%H:%M:%SZ")
+    url = (
+        f"{SUPABASE_URL}/rest/v1/contacts"
+        f"?select=id,phone,created_at,outbound_leads(id)"
+        f"&outbound_leads=is.null"
+        f"&created_at=gt.{cutoff_iso}"
+        f"&order=created_at.asc"
+    )
+    r = await client.get(url, headers=sb_headers())
+    if r.status_code != 200:
+        log.error(f"detect_and_schedule_fresh_leads fetch failed: {r.status_code} {r.text[:200]}")
+        return
+    new_contacts = r.json()
+    if not new_contacts:
+        return
+
+    log.info(f"detect_and_schedule_fresh_leads: {len(new_contacts)} brand-new contact(s) with no outbound_leads row")
+
+    for contact in new_contacts:
+        contact_id = contact["id"]
+        raw_phone  = contact.get("phone") or ""
+        if not raw_phone:
+            log.error(f"detect_and_schedule_fresh_leads: contact {contact_id} has no phone — skipping")
+            continue
+        # contacts.phone never carries a '+' prefix (confirmed live), but
+        # outbound_leads.phone is dialed verbatim by /trigger-call and looked
+        # up elsewhere assuming '+' — normalize here rather than propagate
+        # the same phone-format bug promote_due_scheduled_actions() has
+        # (that function inserts contacts.phone into outbound_leads.phone
+        # as-is, with no '+' — flagged separately, not fixed here since it's
+        # out of this task's scope).
+        phone = raw_phone if raw_phone.startswith("+") else f"+{raw_phone}"
+
+        created_dt_utc = datetime.fromisoformat(contact["created_at"].replace("Z", "+00:00"))
+        target_ist = created_dt_utc.astimezone(IST) + timedelta(hours=5)
+
+        if target_ist.hour < CALL_START_HOUR:
+            target_ist = target_ist.replace(hour=CALL_START_HOUR, minute=0, second=0, microsecond=0)
+        elif target_ist.hour >= CALL_END_HOUR:
+            target_ist = (target_ist + timedelta(days=1)).replace(hour=CALL_START_HOUR, minute=0, second=0, microsecond=0)
+        # else: leave as computed — already inside the calling window
+
+        cooldown_until_utc = target_ist.astimezone(timezone.utc).isoformat()
+
+        create_r = await client.post(
+            f"{SUPABASE_URL}/rest/v1/outbound_leads",
+            headers=sb_headers(),
+            json={
+                "tenant_id":      TENANT_ID,
+                "contact_id":     contact_id,
+                "phone":          phone,
+                "funnel_type":    "fresh_cta",
+                "campaign_type":  "fresh_cta",
+                "campaign_id":    FRESH_CTA_CAMPAIGN_ID,
+                "status":         "pending",
+                "cooldown_until": cooldown_until_utc,
+            },
+        )
+        if create_r.status_code not in (200, 201):
+            log.error(f"detect_and_schedule_fresh_leads: create failed for contact {contact_id}: {create_r.status_code} {create_r.text[:200]}")
+        else:
+            log.info(f"detect_and_schedule_fresh_leads: scheduled contact={contact_id} phone={phone} fire_at={cooldown_until_utc}")
+
+
+async def sync_whatsapp_visit_dates(client: httpx.AsyncClient):
+    """
+    Syncs WhatsApp-confirmed visit dates into outbound_leads, so the existing
+    visit_date_status IS NULL dispatch filter (get_due_leads/get_due_fresh_leads)
+    correctly excludes leads who already confirmed a visit date over WhatsApp,
+    not just over a call. Without this, a lead who told the WhatsApp bot
+    "Sunday" still shows visit_date_status=NULL in outbound_leads and gets
+    auto-called by fresh_cta despite already having a confirmed date — this
+    was confirmed live on two real leads (919891984799, 919818428944) before
+    this function existed.
+
+    Status vocabulary: leads.visit_date_status uses 'expected' for a
+    WhatsApp-confirmed date (confirmed live via SELECT DISTINCT on leads and
+    lead_full_details — 'expected' is the only non-null value in either
+    table, nothing else like 'declined'/'tentative' exists to exclude).
+    outbound_leads uses a DIFFERENT word for the same real-world state —
+    'confirmed' — written today only by the call-based path (see
+    supabase_calling.py finalize_call(), the appointment_confirmed branch).
+    This function writes 'confirmed' into outbound_leads, NOT 'expected' —
+    matching the vocabulary the dispatch filter and the rest of the system
+    already expect, not inventing a third value.
+
+    Phone matching: leads.phone never carries a '+' prefix (same as
+    contacts/whatsapp_conversations), but outbound_leads.phone is mixed —
+    some rows have '+', some don't (the same promote_due_scheduled_actions()
+    normalization gap noted in detect_and_schedule_fresh_leads()'s docstring
+    — confirmed live on these exact two rows, neither has '+') — so both
+    phone forms are matched via an `or=` filter, same defensive pattern
+    webhook.py's /answer already uses for inbound reactivation lookups.
+
+    Idempotent by construction: the visit_date_status=is.null filter in the
+    PATCH itself means a lead already synced (or already call-confirmed)
+    simply matches zero rows on the next tick — no extra bookkeeping needed.
+    """
+    r = await client.get(
+        f"{SUPABASE_URL}/rest/v1/leads",
+        headers=sb_headers(),
+        params={"visit_date_status": "eq.expected", "select": "phone,visit_date"},
+    )
+    if r.status_code != 200:
+        log.error(f"sync_whatsapp_visit_dates: leads fetch failed: {r.status_code} {r.text[:200]}")
+        return
+    confirmed_leads = r.json()
+    if not confirmed_leads:
+        return
+
+    for lead in confirmed_leads:
+        phone = (lead.get("phone") or "").strip()
+        if not phone:
+            continue
+        visit_date = lead.get("visit_date")
+
+        phone_variants = {phone, phone if phone.startswith("+") else f"+{phone}"}
+        phone_or = ",".join(f"phone.eq.{v}" for v in phone_variants)
+
+        patch_r = await client.patch(
+            f"{SUPABASE_URL}/rest/v1/outbound_leads",
+            headers=sb_headers(),
+            params={"or": f"({phone_or})", "visit_date_status": "is.null"},
+            json={"visit_date": visit_date, "visit_date_status": "confirmed"},
+        )
+        if patch_r.status_code not in (200, 204):
+            log.error(f"sync_whatsapp_visit_dates: patch failed for {phone}: {patch_r.status_code} {patch_r.text[:200]}")
+            continue
+        updated = patch_r.json() if patch_r.status_code == 200 else []
+        if updated:
+            log.info(
+                f"sync_whatsapp_visit_dates: {phone} -> visit_date_status=confirmed on "
+                f"{len(updated)} outbound_leads row(s), visit_date={visit_date!r}"
+            )
+
+
 async def get_wa_decline_leads(client: httpx.AsyncClient, slots: int, active_campaign_ids: list[str]) -> list[dict]:
     """
     Leads whose WhatsApp conversation ended in a decline — objection_type is set
@@ -550,6 +725,8 @@ async def cleanup_stuck_leads(client: httpx.AsyncClient):
 
 async def tick(client: httpx.AsyncClient):
     await promote_due_scheduled_actions(client)
+    await detect_and_schedule_fresh_leads(client)
+    await sync_whatsapp_visit_dates(client)
     await cleanup_stuck_leads(client)
     if not is_calling_window():
         return
