@@ -9,9 +9,10 @@ import io
 import time
 import re
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from dataclasses import dataclass, field
 from typing import Optional
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,10 +20,11 @@ import uvicorn
 import httpx
 from dotenv import load_dotenv
 from groq import Groq
-from knowledge import get_response as kb_response, build_llm_context, match_faq_detour
+from knowledge import get_response as kb_response, build_llm_context, match_faq_detour, reply_has_ungrounded_price
+from audit_log import audit_event
 
 load_dotenv("/home/voiceagent/voice-ai/.env")
-from supabase_calling import insert_call_log, finalize_call, get_or_create_lead_id
+from supabase_calling import insert_call_log, finalize_call, get_or_create_lead_id, mark_dnc_immediate
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -149,6 +151,34 @@ VOBIZ_ACCOUNT  = "MA_P0E0RLUU"
 VOBIZ_AUTH_ID  = "MA_P0E0RLUU"
 VOBIZ_AUTH_TOK = "XC5wQHlaTsNKltGHxoo4Ln5s14zQKzcDd31EQ2I4MEXOlDUBHWcuZ4Ja4dJh6JMY"
 
+# 10:00 AM - 8:00/10:00 PM IST calling window — mirrors outbound_orchestrator.py's
+# CALL_START_HOUR/CALL_END_HOUR_BY_CAMPAIGN (kept as separate constants, not a
+# shared import, since the two processes are deployed/restarted independently).
+# Enforced here too, not just in the orchestrator's tick() loop: /trigger-call
+# previously had no window check of its own and trusted whichever caller hit
+# it to have already gated on the window — same single-point-of-enforcement
+# shape as the DNC bypass fixed 2026-07-15 (see mark_dnc_immediate), where
+# calls turned out to be arriving through this endpoint from something other
+# than the orchestrator's own filtered lead list.
+#
+# fresh_cta gets the wider 10-22 window (first-contact outreach); every
+# reactivation variant (reactivation/react_a/b/c, and call_cycle 2/3 which
+# reuse the same campaign value) is clamped tighter to 10-20 — these are
+# repeat contacts with an existing customer, where a late-evening call reads
+# as more intrusive than a first-touch fresh lead call.
+IST             = ZoneInfo("Asia/Kolkata")
+CALL_START_HOUR = 10   # 10:00 AM IST, all campaigns
+CALL_END_HOUR_BY_CAMPAIGN = {
+    "fresh_cta": 22,   # 10:00 PM IST
+}
+CALL_END_HOUR_DEFAULT = 20   # 8:00 PM IST — reactivation/react_a/b/c and anything else
+
+
+def is_calling_window(campaign: str = "") -> bool:
+    hour = datetime.now(IST).hour
+    end_hour = CALL_END_HOUR_BY_CAMPAIGN.get(campaign, CALL_END_HOUR_DEFAULT)
+    return CALL_START_HOUR <= hour < end_hour
+
 # ─── STT Correction Map ───────────────────────────────────────────────────────
 STT_CORRECTIONS = {
     r"\bso far\b":       "sofa",
@@ -184,6 +214,7 @@ MIN_SPEECH_FRAMES = 6    # 120ms minimum — filters out clicks and noise
 TRAILING_SILENCE  = 18   # 360ms — enough for natural mid-sentence pauses
 BARGE_IN_FRAMES   = 10  # raised from 4 — reduces false barge-in triggers from echo/noise on longer reactivation lines
 SAMPLE_RATE       = 8000
+REJECTION_GRACEFUL_DECLINE_THRESHOLD = 2  # rejection_signals count that forces a scripted, no-CTA exit
 
 # ═════════════════════════════════════════════════════════════════════════════
 # INTENT ENGINE
@@ -211,7 +242,15 @@ OBJECTIONS = {
         "बिल्कुल कंपेयर करिए सर। हमारे खुद के प्लांट्स हैं तो क्वालिटी और प्राइसिंग दोनों में एडवांटेज है। किस ब्रांड से कंपेयर कर रहे हैं?"
     ),
     "not_interested": (
-        ["nahi chahiye","interest nahi","zaroorat nahi","wrong number","galat number","rehne do"],
+        ["nahi chahiye","interest nahi","zaroorat nahi","wrong number","galat number","rehne do",
+         # Added alongside the reactivation-funnel dnc fix (webhook_reactivation.py) —
+         # same "call again" phrasing gap confirmed live there; this matcher is a
+         # separate raw-substring system (not detect_intents), so ported as literal
+         # phrases rather than the token-proximity check used in the other funnels.
+         "call na karo","call na karein","dobara call na","call mat karna","phone mat karna",
+         "list se hata","bilkul interested nahi",
+         "कॉल ना करो","कॉल ना करें","दोबारा कॉल ना","कॉल मत करना","फोन मत करना",
+         "लिस्ट से हटा","बिल्कुल इंटरेस्टेड नहीं"],
         "कोई बात नहीं सर। कभी ज़रूरत हो तो हम हैं। आपका दिन शुभ हो!"
     ),
 }
@@ -397,6 +436,7 @@ class CallSession:
         self.is_processing     = False
         self.is_priya_speaking = False
         self.barge_frames      = 0
+        self.barge_in_pending  = False  # set True by ingest() when barge-in fires; ws_handler consumes it to actually stop playback
         self.audio_buffer      = bytearray()
         self.in_speech         = False
         self.speaking_frames   = 0
@@ -425,12 +465,26 @@ class CallSession:
         is_speech = rms > SILENCE_THRESHOLD
 
         if self.is_priya_speaking:
+            # KNOWN GAP: frames in this branch only ever count toward
+            # barge_frames -- they're never appended to audio_buffer, and
+            # _reset_vad() below clears whatever's there once BARGE-IN fires.
+            # So the ~200ms of speech (BARGE_IN_FRAMES frames) that actually
+            # triggers detection never reaches STT; only speech arriving
+            # after is_priya_speaking goes back to False gets captured. If a
+            # customer's entire utterance lands inside that detection window,
+            # it's silently dropped -- confirmed live 2026-07-23 on a
+            # reactivation-pilot call (barge-in fired before stt, stt came
+            # back empty), though same-shape calls elsewhere in the same
+            # pilot got real text, so this alone doesn't explain every empty
+            # STT turn -- just a real, structural loss window worth knowing
+            # about before touching this logic.
             if is_speech:
                 self.barge_frames += 1
                 if self.barge_frames >= BARGE_IN_FRAMES:
                     logger.info(f"[{self.call_uuid}] BARGE-IN")
                     self.is_priya_speaking = False
                     self.barge_frames      = 0
+                    self.barge_in_pending  = True
                     self._reset_vad()
             else:
                 self.barge_frames = max(0, self.barge_frames - 1)
@@ -519,7 +573,8 @@ def ulaw_to_wav(ulaw_bytes: bytes) -> bytes:
 
 
 # ─── STT ─────────────────────────────────────────────────────────────────────
-async def transcribe(wav_bytes: bytes) -> str:
+async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> str:
+    _t0 = time.time()
     try:
         client = await _get_sarvam_client()
         r = await client.post(
@@ -538,18 +593,23 @@ async def transcribe(wav_bytes: bytes) -> str:
                     ),
                 }
             )
+        _duration_ms = round((time.time() - _t0) * 1000)
         if r.status_code == 200:
             text = r.json().get("transcript", "").strip()
             if not text:
-                logger.info("Saaras: empty transcript")
+                logger.info(f"[{call_uuid}] Saaras: empty transcript")
+                audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=_duration_ms)
                 return ""
-            logger.info(f"STT → '{text}'")
+            logger.info(f"[{call_uuid}] STT → '{text}'")
+            audit_event(call_uuid, "stt", turn=turn, text=text, lang="hi-IN", empty=False, duration_ms=_duration_ms)
             return text
         else:
-            logger.error(f"Saaras STT {r.status_code}: {r.text[:200]}")
+            logger.error(f"[{call_uuid}] Saaras STT {r.status_code}: {r.text[:200]}")
+            audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=_duration_ms)
             return ""
     except Exception as e:
-        logger.error(f"STT error: {e}")
+        logger.error(f"[{call_uuid}] STT error: {e}")
+        audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=round((time.time() - _t0) * 1000))
         return ""
 
 # ─── TTS ─────────────────────────────────────────────────────────────────────
@@ -715,6 +775,52 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
     session.turn_count += 1
     state = session.state
 
+    # Absolute safety net, independent of not_understood_streak/_total and of
+    # state — a call stuck looping any branch (faq_mode included) for 25 turns
+    # forces the same DONE/goodbye/hangup path rather than running unbounded.
+    if session.turn_count >= 25:
+        session.state = "DONE"
+        reply = "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+        session.conversation.append(("user", text_raw))
+        session.conversation.append(("assistant", reply))
+        return reply, "turn_cap_close"
+
+    # Second, independent safety net: >180s elapsed with zero real
+    # (non-IVR-fragment) customer speech. Turn-count alone isn't reliable
+    # when turns are short — the react_a "Rajni" call (919910566742,
+    # 2026-07-25) ran 370 turns / 2731s against a carrier hold-loop before
+    # any turn cap existed on that handler. turn_count_substantive is only
+    # incremented on real (fragment-filtered) speech, so 0 here means every
+    # turn so far was silence or an IVR fragment.
+    if getattr(session, "turn_count_substantive", 0) == 0:
+        _started = getattr(session, "started_at", None)
+        if _started:
+            try:
+                _elapsed = (datetime.now(timezone.utc) - datetime.fromisoformat(_started)).total_seconds()
+            except ValueError:
+                _elapsed = 0
+            if _elapsed > 180:
+                session.state = "DONE"
+                reply = "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                session.conversation.append(("user", text_raw))
+                session.conversation.append(("assistant", reply))
+                return reply, "duration_cap_close"
+
+    # IVR/voicemail fragment check — same phonetic-Devanagari pattern match
+    # every webhook_reactivation.py handler already uses, applied once per
+    # turn ahead of state/faq_mode dispatch so it covers every state fresh_lead
+    # can be in, not just QUALIFY_PRODUCT (where the one confirmed incident
+    # happened, but nothing state-specific makes it QUALIFY_PRODUCT-only).
+    # Withholds the reply (state_machine's equivalent of returning True to
+    # keep listening) instead of attempting product/budget extraction or FAQ
+    # matching against carrier-hold gibberish.
+    from webhook_reactivation import _is_ivr_fragment
+    if text_fixed and _is_ivr_fragment(text_fixed):
+        logger.info(f"[{call_uuid}] state={state} IVR/voicemail fragment detected transcript='{text_fixed[:60]}' — withholding reply, marker=ivr_fragment_detected")
+        session.ivr_fragment_count = getattr(session, "ivr_fragment_count", 0) + 1
+        session.conversation.append(("user", text_raw))
+        return None, "ivr_fragment_detected"
+
     if session.faq_mode:
         reply, source = kb_response(text_fixed, session)
         if source in ("noise", "ack"):
@@ -759,6 +865,7 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
                 return reply, "hook_negative_2"
         product = extract_product(text_fixed) or extract_product(text_raw)
         if product:
+            session.not_understood_streak = 0
             session.lead["product"] = product
             session.slots["product"] = product
             session.state = "QUALIFY_BUDGET"
@@ -782,13 +889,33 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             # resumes on the next turn as if this turn was a detour.
             faq_reply, faq_id = match_faq_detour(text_fixed, session)
             if faq_reply:
+                session.not_understood_streak = 0
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", faq_reply))
                 return faq_reply, f"faq:{faq_id}"
-            # Product not understood — clarify warmly then re-ask
+            # Product not understood — clarify warmly, re-ask once, then close.
+            # Uncapped before this: a caller whose audio is never intelligible
+            # (carrier hold/IVR bleed-through, background noise) would get the
+            # same "not_understood" line forever with no escalation — confirmed
+            # live as a 506s/51-turn call that never hung up. 3 consecutive
+            # misses closes the call gracefully instead, via the same
+            # state="DONE" auto-hangup hook WRAP_UP's goodbye already uses
+            # (webhook.py respond(), ~1269) — not a new mechanism.
             already_asked = getattr(session, "product_ask_count", 0)
             session.product_ask_count = already_asked + 1
-            if already_asked >= 1:
+            session.not_understood_streak = getattr(session, "not_understood_streak", 0) + 1
+            # not_understood_total mirrors the streak but is NEVER reset by the
+            # match_faq_detour branches above — confirmed live (call
+            # aa747696-c47a-4b9c-b2d4-4cfbd588a60e, 51 turns) that a caller
+            # alternating between "not understood" and an FAQ-detour hit keeps
+            # resetting the streak to 0 forever, so it never reaches 3. This
+            # counter closes that gap independent of the streak.
+            session.not_understood_total = getattr(session, "not_understood_total", 0) + 1
+            if session.not_understood_streak >= 3 or session.not_understood_total >= 5:
+                session.state = "DONE"
+                reply = "ठीक है सर, लगता है अभी लाइन साफ़ नहीं आ रही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                source = "not_understood_close"
+            elif already_asked >= 1:
                 reply = "माफ़ करना, समझ नहीं पाई — sofa, bed, dining, wardrobe, कौन सा देखना है?"
                 source = "not_understood"
             else:
@@ -815,10 +942,12 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             # vague/not-understood budget answer. State stays QUALIFY_BUDGET.
             faq_reply, faq_id = match_faq_detour(text_fixed, session)
             if faq_reply:
+                session.not_understood_streak = 0
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", faq_reply))
                 return faq_reply, f"faq:{faq_id}"
         if budget:
+            session.not_understood_streak = 0
             session.lead["budget"] = budget.strip(".,!? ।")
             session.slots["budget"] = budget.strip(".,!? ।")
             session.state = "QUALIFY_URGENCY"
@@ -826,15 +955,28 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             reply = "और कब तक चाहिए — कोई जल्दी है, या अभी देख रहे हैं बस?"
             session.urgency_lang_override = "hinglish"  # always use hinglish audio
         else:
-            # Vague answer like "लगभग", "roughly" — apologise then re-ask
+            # Vague answer like "लगभग", "roughly" — apologise then re-ask, then
+            # close. Same not_understood_streak cap as QUALIFY_PRODUCT above —
+            # shared across states because it's tracking "can we understand
+            # this caller at all right now", not a per-state count.
             vague_words = {"लगभग","lagbhag","roughly","almost","करीब","तकरीबन","शायद","pata nahi","nahi pata","hmm","hm","umm","uhh"}
             tl_check = text_fixed.lower().strip(".,!? ।")
             if any(v in tl_check for v in vague_words) or len(tl_check.split()) <= 1:
-                reply = "माफ़ करना, ठीक से समझ नहीं पाई — budget roughly कितना सोच रहे हैं?"
-                source = "not_understood_budget"
+                session.not_understood_streak = getattr(session, "not_understood_streak", 0) + 1
+                # not_understood_total — same never-reset counter as
+                # QUALIFY_PRODUCT above, shared across states.
+                session.not_understood_total = getattr(session, "not_understood_total", 0) + 1
+                if session.not_understood_streak >= 3 or session.not_understood_total >= 5:
+                    session.state = "DONE"
+                    reply = "ठीक है सर, लगता है अभी लाइन साफ़ नहीं आ रही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                    source = "not_understood_close"
+                else:
+                    reply = "माफ़ करना, ठीक से समझ नहीं पाई — budget roughly कितना सोच रहे हैं?"
+                    source = "not_understood_budget"
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", reply))
                 return reply, source
+            session.not_understood_streak = 0
             reply = "Budget rough idea भी चलेगा — जैसे ₹२०,००० से ₹५०,००० या इससे ऊपर?"
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply))
@@ -948,30 +1090,62 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
     return llm_reply(text_fixed, session, call_uuid)
 
 
+_LLM_SAFE_FALLBACK = "एक सेकंड, मैं चेक करके बताती हूँ।"
+
+# Appended to the system prompt only on the retry after a grounding
+# rejection — the base prompt's "NEVER make up prices" instruction alone did
+# not stop the model (confirmed live: call 50845de5 fabricated "₹33,000" for
+# a product not in the knowledge base). This is more forceful and names the
+# exact failure mode, since a generic instruction wasn't enough on its own.
+_LLM_GROUNDING_RETRY_SUFFIX = f"""
+
+IMPORTANT: आपका पिछला जवाब एक ऐसी कीमत बता रहा था जो STORE KNOWLEDGE में कहीं नहीं है — यह गलत जानकारी है।
+Is baar koi bhi specific ₹ price mat bolo jab tak woh EXACTLY STORE KNOWLEDGE section mein likhi na ho.
+Agar exact price pata nahi hai, sirf yeh bolo: "{_LLM_SAFE_FALLBACK}" — koi number mat banao."""
+
+
+def _call_groq(text: str, session, call_uuid: str, context: str) -> str:
+    llm = groq_client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[
+            {"role": "system", "content": context},
+            *[{"role": r, "content": c} for r, c in session.conversation[-6:]],
+            {"role": "user", "content": text}
+        ],
+        max_tokens=60,
+        temperature=0.2,
+    )
+    return llm.choices[0].message.content.strip()
+
+
 def llm_reply(text: str, session, call_uuid: str) -> tuple[str | None, str]:
     try:
         base_context = build_llm_context()
         context = build_multilingual_llm_system_prompt(session, base_context)
         if session.last_reply:
             context += f"\n\nमैंने अभी कहा: '{session.last_reply}'"
-        llm = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "system", "content": context},
-                *[{"role": r, "content": c} for r, c in session.conversation[-6:]],
-                {"role": "user", "content": text}
-            ],
-            max_tokens=60,
-            temperature=0.2,
-        )
-        reply = llm.choices[0].message.content.strip()
+
+        reply = _call_groq(text, session, call_uuid, context)
+
+        if reply_has_ungrounded_price(reply):
+            logger.warning(f"[{call_uuid}] LLM GROUNDING REJECTED (attempt 1) — unverified price in: '{reply[:100]}' — retrying")
+            retry_reply = _call_groq(text, session, call_uuid, context + _LLM_GROUNDING_RETRY_SUFFIX)
+            if reply_has_ungrounded_price(retry_reply):
+                logger.warning(f"[{call_uuid}] LLM GROUNDING REJECTED (attempt 2) — unverified price in: '{retry_reply[:100]}' — falling back to safe line")
+                reply = _LLM_SAFE_FALLBACK
+                session.conversation.append(("user", text))
+                session.conversation.append(("assistant", reply))
+                return reply, "fallback_ungrounded"
+            reply = retry_reply
+            logger.info(f"[{call_uuid}] LLM grounding retry passed → '{reply[:60]}'")
+
         session.conversation.append(("user", text))
         session.conversation.append(("assistant", reply))
         logger.info(f"[{call_uuid}] LLM → '{reply[:60]}'")
         return reply, "llm"
     except Exception as e:
         logger.error(f"LLM error: {e}")
-        return "एक सेकंड, मैं चेक करके बताती हूँ।", "fallback_llm"
+        return _LLM_SAFE_FALLBACK, "fallback_llm"
 
 
 # ─── Play Audio Helper ────────────────────────────────────────────────────────
@@ -989,8 +1163,9 @@ async def _fire_followup_wa(call_uuid: str, name: str, phone: str):
     except Exception as e:
         logger.error(f"[{call_uuid}] Followup WA error: {e}")
 
-async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
+async def play_audio_url(call_uuid: str, audio_url: str, turn: int = 0, kind: str = "reply") -> bool:
     _t0 = time.time()
+    audit_event(call_uuid, "play_issue", turn=turn, audio_url=audio_url, kind=kind)
     try:
         client = await _get_vobiz_client()
         r = await asyncio.wait_for(
@@ -1004,13 +1179,17 @@ async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
         )
         _elapsed = time.time() - _t0
         logger.info(f"[{call_uuid}] Play → {r.status_code} | {_elapsed:.2f}s | {audio_url}")
+        audit_event(call_uuid, "play_result", turn=turn, status_code=r.status_code, elapsed_ms=round(_elapsed * 1000), kind=kind)
         return r.status_code in (200, 202)
     except asyncio.TimeoutError:
         _elapsed = time.time() - _t0
         logger.warning(f"[{call_uuid}] Play TIMEOUT after {_elapsed:.2f}s → {audio_url}")
+        audit_event(call_uuid, "play_timeout", turn=turn, elapsed_ms=round(_elapsed * 1000), kind=kind, audio_url=audio_url)
         return True
     except Exception as e:
         logger.error(f"[{call_uuid}] play_audio_url error: {type(e).__name__}: {e}")
+        _elapsed = time.time() - _t0
+        audit_event(call_uuid, "play_result", turn=turn, status_code=None, elapsed_ms=round(_elapsed * 1000), kind=kind, error=type(e).__name__)
         global _vobiz_http_client
         if isinstance(e, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
             logger.warning(f"[{call_uuid}] resetting vobiz client due to {type(e).__name__}")
@@ -1018,10 +1197,38 @@ async def play_audio_url(call_uuid: str, audio_url: str) -> bool:
         return False
 
 
+async def _hold_then_stop_speaking(session: "CallSession") -> None:
+    """
+    react_a/b/c, call2/3, followup_wa and fresh_cta turns play their
+    reply/replies as fire-and-forget background POSTs (see webhook_reactivation
+    ._vobiz_play) rather than the fresh-lead pipeline's awaited
+    play_audio_url + asyncio.sleep(duration) + priya_stops_speaking(). Without
+    this, is_priya_speaking flipped back to False the instant the turn handler
+    returned control -- near-instantly, since nothing awaits the actual
+    playback anymore -- while the real clip could still be playing for
+    several more seconds (ra_offer_main alone is 15.4s), leaving barge-in
+    detection off for nearly the whole reply. play_key() accumulates the real
+    duration of every clip it plays onto session.turn_audio_duration each
+    turn; this holds is_priya_speaking True for that long before clearing it,
+    same protection window the fresh-lead pipeline gets from awaiting its own
+    play + sleep(duration).
+    """
+    hold = getattr(session, "turn_audio_duration", 0.0)
+    if hold > 0:
+        await asyncio.sleep(hold + 0.3)
+    session.is_priya_speaking = False
+
+
 # ─── Core Respond Pipeline ────────────────────────────────────────────────────
 async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: str):
     session.is_processing = True
     t0 = time.time()
+    # Captured once per turn so every audit_event this respond() call emits
+    # (stt/play_issue/play_result here, plus route/tts/turn_end inside
+    # whichever handler this dispatches to) reports the SAME turn number —
+    # session.turn_count itself isn't incremented until inside state_machine()
+    # or the react handlers, well after some of these events already fired.
+    session.turn_idx = getattr(session, "turn_count", 0) + 1
     try:
         # ── Fire filler PRE-STT for reactivation — customer hears instantly
         # (skipped for call_cycle 2/3 — those use their own script regardless
@@ -1037,10 +1244,10 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 _filler_url = f"{BASE_URL}/audio/static/{_filler_prefix}_filler_{_filler_n}_hi.wav"
             else:
                 _filler_url = f"{BASE_URL}/audio/static/react_filler_{_filler_n}_hi.wav"
-            asyncio.create_task(play_audio_url(call_uuid, _filler_url))
+            asyncio.create_task(play_audio_url(call_uuid, _filler_url, turn=session.turn_idx, kind="filler"))
             session.is_priya_speaking = True
             logger.info(f"[{call_uuid}] PRE-STT filler fired → {_filler_url}")
-        text = await transcribe(ulaw_to_wav(audio))
+        text = await transcribe(ulaw_to_wav(audio), call_uuid=call_uuid, turn=session.turn_idx)
 
         # ── call_cycle 2/3 override — takes priority over campaign routing ─────
         # fresh_cta is the one exception: it has its own call_cycle-aware
@@ -1051,9 +1258,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         if getattr(session, "call_cycle", None) == "2" and session.campaign != "fresh_cta":
             from webhook_reactivation import handle_call2_turn
             should_continue = await handle_call2_turn(session, text or "", call_uuid)
-            session.is_priya_speaking = False
+            await _hold_then_stop_speaking(session)
             if not should_continue:
-                await asyncio.sleep(0.8)
                 try:
                     async with httpx.AsyncClient(timeout=8) as hc:
                         await hc.delete(
@@ -1067,9 +1273,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         elif getattr(session, "call_cycle", None) == "3" and session.campaign != "fresh_cta":
             from webhook_reactivation import handle_call3_turn
             should_continue = await handle_call3_turn(session, text or "", call_uuid)
-            session.is_priya_speaking = False
+            await _hold_then_stop_speaking(session)
             if not should_continue:
-                await asyncio.sleep(0.8)
                 try:
                     async with httpx.AsyncClient(timeout=8) as hc:
                         await hc.delete(
@@ -1085,9 +1290,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         if session.campaign == "followup_wa":
             from webhook_reactivation import handle_followup_wa_turn
             should_continue = await handle_followup_wa_turn(session, text or "", call_uuid)
-            session.is_priya_speaking = False
+            await _hold_then_stop_speaking(session)
             if not should_continue:
-                await asyncio.sleep(0.8)
                 try:
                     async with httpx.AsyncClient(timeout=8) as hc:
                         await hc.delete(
@@ -1100,9 +1304,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         if session.campaign in ("reactivation", "react_a", "react_b", "react_c"):
             from webhook_reactivation import handle_reactivation_turn, play_key
             should_continue = await handle_reactivation_turn(session, text or "", call_uuid)
-            session.is_priya_speaking = False
+            await _hold_then_stop_speaking(session)
             if not should_continue:
-                await asyncio.sleep(0.8)
                 try:
                     async with httpx.AsyncClient(timeout=8) as hc:
                         await hc.delete(
@@ -1116,9 +1319,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         if session.campaign == "fresh_cta":
             from webhook_reactivation import handle_fresh_cta_turn
             should_continue = await handle_fresh_cta_turn(session, text or "", call_uuid)
-            session.is_priya_speaking = False
+            await _hold_then_stop_speaking(session)
             if not should_continue:
-                await asyncio.sleep(0.8)
                 try:
                     async with httpx.AsyncClient(timeout=8) as hc:
                         await hc.delete(
@@ -1149,6 +1351,21 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             return
 
         session.empty_turns = 0  # reset on real speech
+
+        # Keep turn_count_substantive fragment-aware — same phonetic-Devanagari
+        # IVR/voicemail pattern check every webhook_reactivation.py handler
+        # already uses. fresh_lead never had this: the +919262102426
+        # 51-turn/506s incident (2026-07-12) ran entirely in QUALIFY_PRODUCT
+        # because carrier hold-loop fragments occasionally matched
+        # extract_product()/FAQ-detour keywords, resetting not_understood_streak
+        # turn after turn. Only skips this counter here — the actual
+        # withhold-reply behavior lives in state_machine() (checked there,
+        # right after the turn/duration caps, so it still applies to every
+        # state and can't let a pure fragment loop dodge either cap by never
+        # reaching state_machine() at all).
+        from webhook_reactivation import _is_ivr_fragment
+        if not _is_ivr_fragment(text):
+            session.turn_count_substantive = getattr(session, "turn_count_substantive", 0) + 1
         turn_lang = detect_lang(text)
         if not hasattr(session, "lang"):
             session.lang = turn_lang
@@ -1176,7 +1393,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 reply = STATIC_RESPONSES.get("goodbye_warm", {}).get(lang) or "बहुत बहुत शुक्रिया! आपका दिन शानदार हो!"
                 wav, audio_url, was_cached = await get_speech(reply, lang, "goodbye_warm")
                 if audio_url:
-                    await play_audio_url(call_uuid, audio_url)
+                    await play_audio_url(call_uuid, audio_url, turn=session.turn_idx)
                     dur = session.priya_starts_speaking(wav) if wav else 2.0
                     await asyncio.sleep(dur + 1.0)
                     session.priya_stops_speaking()
@@ -1205,13 +1422,17 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
                 reply = STATIC_RESPONSES.get(reask_key, {}).get(audio_lang) or STATIC_RESPONSES.get(reask_key, {}).get("hi", "")
                 wav, audio_url, was_cached = await get_speech(reply, audio_lang, reask_key)
                 if audio_url:
-                    await play_audio_url(call_uuid, audio_url)
+                    await play_audio_url(call_uuid, audio_url, turn=session.turn_idx)
                 return
             logger.info(f"[{call_uuid}] ACK — silent")
             return
 
         text_fixed = fix_stt(text)
         # ── Sentiment tracking ──────────────────────────────────────────
+        # This list is intentionally loose (bare "nahi"/"nhi"/"busy" match) —
+        # it only ever fed a post-call lead score, where noise doesn't matter.
+        # Do NOT use it to decide whether to end the call — see
+        # _hard_rejection_kw below for that.
         _interest_kw  = ["kitna","kab","offer","discount","aana","dekhna","chahiye","dikhao","kitne","exchange","कितना","कब","ऑफर","आना","देखना","चाहिए","दिखाओ"]
         _rejection_kw = ["nahin","nahi","nhi","busy","mat karo","band karo","nahin chahiye","नहीं","बिज़ी","मत करो","बंद करो","नहीं चाहिए"]
         _tl = text.lower()
@@ -1219,7 +1440,53 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         if not hasattr(session, "rejection_signals"): session.rejection_signals = 0
         if any(k in _tl for k in _interest_kw):  session.interest_signals  += 1
         if any(k in _tl for k in _rejection_kw): session.rejection_signals += 1
-        reply, source = state_machine(text_fixed, text, session, call_uuid)
+
+        # ── Explicit DNC / hard-rejection override ────────────────────────
+        # Deliberately a SEPARATE, stricter list/counter from rejection_signals
+        # above — that list matches bare "nahi"/"nhi"/"busy", which show up
+        # constantly in normal engaged turns ("budget abhi nahi pata",
+        # "sofa nahi bed chahiye", "thoda busy hoon do minute mein baat karta
+        # hoon" all matched it in testing). Fine for a soft post-call score;
+        # not safe as a hard "end the call" trigger — two such turns would
+        # hang up on a customer who's still willing to talk. This list only
+        # counts phrases that express actual terminal/end-of-call intent.
+        _hard_rejection_kw = ["nahin chahiye","नहीं चाहिए","mat karo","मत करो","band karo","बंद करो",
+                              "phone kaat","call kaat","kaat diya","phone rakh diya","call rakh diya",
+                              "फोन काट","फ़ोन काट","कॉल काट","काट दिया","फोन रख दिया","फ़ोन रख दिया","कॉल रख दिया"]
+        if not hasattr(session, "hard_rejection_signals"): session.hard_rejection_signals = 0
+        if any(k in _tl for k in _hard_rejection_kw): session.hard_rejection_signals += 1
+
+        # Detection existed (rejection_signals) but was never wired to
+        # behavior — the agent kept pushing for a date/CTA even after a
+        # clear rejection or an explicit "don't call me again". Both exits
+        # below are fully scripted/pre-cached (STATIC_RESPONSES →
+        # get_speech's static-cache layer), never a live LLM/TTS round trip.
+        from webhook_reactivation import detect_intents
+        is_explicit_dnc = session.state != "DONE" and "dnc" in detect_intents(text)
+        hit_rejection_threshold = (
+            session.state != "DONE"
+            and not is_explicit_dnc
+            and session.hard_rejection_signals >= REJECTION_GRACEFUL_DECLINE_THRESHOLD
+        )
+        if is_explicit_dnc or hit_rejection_threshold:
+            session.dnc = True if is_explicit_dnc else getattr(session, "dnc", False)
+            session.state = "DONE"
+            from tts_engine import STATIC_RESPONSES
+            audio_lang = getattr(session, "lang", "hi")
+            reply = STATIC_RESPONSES.get("graceful_decline", {}).get(audio_lang) \
+                or STATIC_RESPONSES.get("graceful_decline", {}).get("hi")
+            source = "graceful_decline"
+            session.conversation.append(("user", text))
+            session.conversation.append(("assistant", reply))
+            if is_explicit_dnc:
+                phone = getattr(session, "customer_phone", "")
+                if phone:
+                    asyncio.create_task(mark_dnc_immediate(phone, call_uuid))
+                logger.info(f"[{call_uuid}] Explicit DNC mid-call → graceful decline + immediate outbound_leads write")
+            else:
+                logger.info(f"[{call_uuid}] Hard rejection threshold hit ({session.hard_rejection_signals}) → graceful decline")
+        else:
+            reply, source = state_machine(text_fixed, text, session, call_uuid)
         if not reply:
             return
 
@@ -1246,7 +1513,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             filler_url = get_filler_for_context(source, lang)
             if filler_url:
                 logger.info(f"[{call_uuid}] FILLER → {filler_url}")
-                asyncio.create_task(play_audio_url(call_uuid, filler_url))
+                asyncio.create_task(play_audio_url(call_uuid, filler_url, turn=session.turn_idx, kind="filler"))
 
         wav, audio_url, was_cached = await get_speech(reply, audio_lang, static_key)
 
@@ -1261,7 +1528,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         session.turn_latencies.append(_latency)
         if session.first_reply_ts is None: session.first_reply_ts = _latency
 
-        await play_audio_url(call_uuid, audio_url)
+        await play_audio_url(call_uuid, audio_url, turn=session.turn_idx)
         await asyncio.sleep(duration)
         session.priya_stops_speaking()
 
@@ -1286,15 +1553,55 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         session.is_processing = False
 
 
-async def stop_audio(call_uuid: str):
+async def stop_audio(call_uuid: str, turn: int = 0):
+    # This DELETE has never actually run in production — the barge-in trigger
+    # that calls it was dead code until this fix (see ws_handler). status_code
+    # and elapsed_ms are logged/audited specifically so it's known whether
+    # Vobiz honours it and how fast, the first time real traffic hits it.
+    _t0 = time.time()
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            await client.delete(
+            r = await client.delete(
                 f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/Play/",
                 headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
             )
+        _elapsed = time.time() - _t0
+        logger.info(f"[{call_uuid}] stop_audio (barge-in) → {r.status_code} | {_elapsed:.2f}s")
+        audit_event(call_uuid, "barge_in", turn=turn, status_code=r.status_code, elapsed_ms=round(_elapsed * 1000))
     except Exception as e:
+        _elapsed = time.time() - _t0
         logger.error(f"[{call_uuid}] stop_audio error: {e}")
+        audit_event(call_uuid, "barge_in", turn=turn, status_code=None, elapsed_ms=round(_elapsed * 1000))
+
+
+# No real speech turn within this long after the Stream opens → hang up.
+# Confirmed live 2026-07-15: ~250 outbound calls/week connect (NORMAL_CLEARING,
+# status=answered) but produce zero conversation turns. Audio analysis of a
+# 124s sample showed ~20s of greeting then 100s of pure silence — no voice,
+# no beep, nothing — consistent with a "ghost answer" (line connects, no one
+# actually engages) rather than a live person the STT failed on. Longest
+# current greeting (rb_greet_combined) is ~23.5s, so 35s gives that room to
+# finish plus a few seconds for the customer to start responding, while
+# cutting the ~100s dead-air waste down to ~35s and freeing the dialer's
+# concurrency slot sooner.
+SILENCE_CUTOFF_SECONDS = 35
+
+async def _hangup_if_silent(call_uuid: str, session: "CallSession"):
+    await asyncio.sleep(SILENCE_CUTOFF_SECONDS)
+    if sessions.get(call_uuid) is not session:
+        return  # call already ended naturally (or session was replaced)
+    if session.turn_count > 0:
+        return  # real conversation happened — leave it alone
+    logger.info(f"[{call_uuid}] No speech within {SILENCE_CUTOFF_SECONDS}s of stream open — auto-hangup (likely ghost-answer/dead air)")
+    try:
+        async with httpx.AsyncClient(timeout=8) as hc:
+            r = await hc.delete(
+                f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/",
+                headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK}
+            )
+        logger.info(f"[{call_uuid}] Silence auto-hangup → {r.status_code}")
+    except Exception as e:
+        logger.error(f"[{call_uuid}] Silence auto-hangup error: {e}")
 
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
@@ -1335,6 +1642,7 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
             logger.error(f"_attach_lead_id error: {e}")
 
     asyncio.create_task(_attach_lead_id())
+    asyncio.create_task(_hangup_if_silent(call_uuid, session))
     logger.info(f"[{call_uuid}] WS open")
 
     try:
@@ -1360,8 +1668,9 @@ async def ws_handler(websocket: WebSocket, call_uuid: str):
                     if not payload: continue
                     chunk = base64.b64decode(payload)
                     should_process, audio = session.ingest(chunk)
-                    if session.barge_frames == BARGE_IN_FRAMES and session.is_priya_speaking:
-                        asyncio.create_task(stop_audio(call_uuid))
+                    if session.barge_in_pending:
+                        asyncio.create_task(stop_audio(call_uuid, turn=getattr(session, "turn_idx", session.turn_count)))
+                        session.barge_in_pending = False
                     if should_process and not session.is_processing:
                         logger.info(f"[{call_uuid}] Audio ready → sending to STT")
                         asyncio.create_task(respond(websocket, session, audio, call_uuid))
@@ -1438,13 +1747,18 @@ async def answer_call(request: Request):
     # Inbound call
     logger.info(f"[{call_uuid}] Inbound from {from_num}")
 
-    # Check if the caller is a known reactivation lead — if so, skip the
+    # Check if the caller is a known lead in EITHER funnel — if so, skip the
     # generic inbound greeting and drop straight into their already-assigned
-    # plan's existing GREETING state (same audio/script as the outbound
-    # reactivation flow, just entered inbound). Numbers stored in
-    # outbound_leads.phone always carry a '+' prefix, but Vobiz's inbound
-    # "From" field does not — so match both forms.
-    react_lead = None
+    # plan's existing GREETING state (same audio/script as the matching
+    # outbound flow, just entered inbound). Originally this only checked
+    # funnel_type=reactivation_customer, so fresh_cta leads calling back
+    # fell through to the generic/unknown-caller branch below with no
+    # campaign, no product, no name attached (confirmed live: this is what
+    # produced an 8m26s/51-turn stuck call for a fresh_cta lead that called
+    # back inbound). Numbers stored in outbound_leads.phone always carry a
+    # '+' prefix, but Vobiz's inbound "From" field does not — so match both
+    # forms.
+    matched_lead = None
     if from_num:
         try:
             _from_variants = {from_num, from_num[1:] if from_num.startswith("+") else f"+{from_num}"}
@@ -1458,72 +1772,79 @@ async def answer_call(request: Request):
                     headers=_hdrs,
                     params={
                         "or":          f"({_phone_or})",
-                        "funnel_type": "eq.reactivation_customer",
+                        "funnel_type": "in.(reactivation_customer,fresh_cta)",
                         "tenant_id":   "eq.krishna_furniture",
-                        "select":      "id,name,campaign_type",
+                        "select":      "id,name,campaign_type,funnel_type,product_interest",
                         "limit":       "1",
                     },
                 )
                 if _r.status_code == 200 and _r.json():
-                    react_lead = _r.json()[0]
+                    matched_lead = _r.json()[0]
         except Exception as _e:
-            logger.error(f"[{call_uuid}] inbound reactivation lookup error: {_e}")
+            logger.error(f"[{call_uuid}] inbound lead lookup error: {_e}")
 
-    if react_lead:
-        _react_campaign = react_lead.get("campaign_type") or "reactivation"
-        _react_name     = react_lead.get("name") or ""
-        logger.info(f"[{call_uuid}] Inbound reactivation lead → {from_num} | name={_react_name} | campaign={_react_campaign}")
+    _name = ""
+    if matched_lead and matched_lead.get("funnel_type") == "fresh_cta":
+        from knowledge_react_abc import normalize_fresh_product_key
+        _name    = matched_lead.get("name") or ""
+        _product = matched_lead.get("product_interest") or ""
+        _product_key = normalize_fresh_product_key(_product)
+        logger.info(f"[{call_uuid}] Inbound fresh_cta lead → {from_num} | name={_name} | product={_product or '-'}")
+        _session_meta[call_uuid] = {
+            "direction": "inbound",
+            "to_phone":  from_num,
+            "campaign":  "fresh_cta",
+            "name":      _name,
+            "product":   _product,
+        }
+        greet_key = f"fresh_greet_{_product_key}" if _product_key else "fresh_greet_generic"
+        play_tag  = f"<Play>{BASE_URL}/audio/static/{greet_key}_hi.wav</Play>"
+
+    elif matched_lead:  # reactivation_customer
+        _react_campaign = matched_lead.get("campaign_type") or "reactivation"
+        _name           = matched_lead.get("name") or ""
+        logger.info(f"[{call_uuid}] Inbound reactivation lead → {from_num} | name={_name} | campaign={_react_campaign}")
         _session_meta[call_uuid] = {
             "direction": "inbound",
             "to_phone":  from_num,
             "campaign":  _react_campaign,
-            "name":      _react_name,
+            "name":      _name,
         }
-        lead_id = await get_or_create_lead_id(from_num, _react_name)
-        asyncio.create_task(insert_call_log(
-            call_uuid   = call_uuid,
-            from_number = from_num,
-            to_number   = "+919262102426",
-            direction   = "inbound",
-            caller_name = _react_name,
-            lead_id     = lead_id,
-        ))
 
-        # Same universal-greeting + "{p}_greet_main" pattern as the outbound
-        # reactivation branch in /answer-outbound — copied, not reinvented.
         if _react_campaign in ("react_a", "react_b", "react_c"):
+            # Single combined clip — same fix as the outbound reactivation
+            # branch in /answer-outbound (2026-07-15). This branch was
+            # "copied, not reinvented" from that one's PRE-fix two-<Play>-tag
+            # form and never got the merge applied, leaving a real ~7s
+            # dead-air gap between the two file fetches on inbound
+            # reactivation callbacks (confirmed live via call 3088c2c5's
+            # nginx log, 2026-07-17 — two separate GETs, universal_greeting_rc
+            # then rc_greet_main, 7s apart).
             _p = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}[_react_campaign]
-            greet_key = f"{_p}_greet_main"
-            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_{_p}_hi.wav"
+            audio_url = f"{BASE_URL}/audio/static/{_p}_greet_combined_hi.wav"
+            play_tag  = f"<Play>{audio_url}</Play>"
         else:
             greet_key = "react_greet_main"
             universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
-        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
-        play_tag  = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
+            audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
+            play_tag  = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
 
-        return PlainTextResponse(
-            f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
-            f'action="https://voice.thesocialhood.in/recording-done"/>'
-            f'{play_tag}'
-            f'<Stream keepCallAlive="true" bidirectional="true" contentType="audio/x-mulaw;rate=8000" streamTimeout="86400">'
-            f'wss://voice.thesocialhood.in/ws/{call_uuid}</Stream>'
-            f'</Response>',
-            media_type="application/xml"
-        )
+    else:
+        # Generic inbound — unknown caller, or a lead never assigned to
+        # either funnel. Unchanged from prior behavior.
+        _session_meta[call_uuid] = {"direction": "inbound", "to_phone": ""}
+        audio_url = await save_audio(INBOUND_GREETING, f"greeting_{call_uuid}")
+        play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
 
-    # Generic inbound — unknown caller, or a fresh lead never assigned a
-    # reactivation plan. Unchanged from prior behavior.
-    _session_meta[call_uuid] = {"direction": "inbound", "to_phone": ""}
-    lead_id = await get_or_create_lead_id(from_num)
+    lead_id = await get_or_create_lead_id(from_num, _name)
     asyncio.create_task(insert_call_log(
         call_uuid   = call_uuid,
         from_number = from_num,
         to_number   = "+919262102426",
         direction   = "inbound",
+        caller_name = _name,
         lead_id     = lead_id,
     ))
-    audio_url = await save_audio(INBOUND_GREETING, f"greeting_{call_uuid}")
-    play_tag  = f"<Play>{audio_url}</Play>" if audio_url else "<Speak>Namaskar! Main Priya hun.</Speak>"
     return PlainTextResponse(
         f'<?xml version="1.0" encoding="UTF-8"?><Response><Record recordSession="true" maxLength="3600" fileFormat="mp3" redirect="false" '
         f'action="https://voice.thesocialhood.in/recording-done"/>'
@@ -1546,7 +1867,8 @@ async def answer_outbound(request: Request):
     call_cycle = request.query_params.get("call_cycle", "")
     # Used by fresh_cta's greeting selection across all 3 call cycles below —
     # computed once here rather than re-derived per cycle.
-    _product_key = product if product in ("bed", "sofa", "wardrobe", "dining") else None
+    from knowledge_react_abc import normalize_fresh_product_key
+    _product_key = normalize_fresh_product_key(product)
     wa_decline_confirm = request.query_params.get("wa_decline_confirm", "") in ("1", "true", "True")
     logger.info(f"[{call_uuid}] Outbound to {to_phone} | name={name} | campaign={campaign or 'generic'} | call_cycle={call_cycle or '1'} | wa_decline_confirm={wa_decline_confirm} | product={product or '-'}")
 
@@ -1569,6 +1891,7 @@ async def answer_outbound(request: Request):
         direction   = "outbound",
         caller_name = name,
         lead_id     = lead_id,
+        call_cycle  = call_cycle,
     ))
 
     if call_cycle == "2" and campaign != "fresh_cta":
@@ -1616,15 +1939,25 @@ async def answer_outbound(request: Request):
             # existing GREETING state — handle_reactivation_turn is unchanged,
             # it just receives a different opening line to react to.
             greet_key = "wa_decline_confirm_greet"
-        else:
-            greet_key = f"{prefix}_greet_main" if campaign in ("react_a", "react_b", "react_c") else "react_greet_main"
-        audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
-        if campaign in ("react_a", "react_b", "react_c"):
-            _ug_suffix = {"react_a": "ra", "react_b": "rb", "react_c": "rc"}[campaign]
-            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_{_ug_suffix}_hi.wav"
-        else:
+            audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
             universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
-        play_tag = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
+            play_tag = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
+        elif campaign in ("react_a", "react_b", "react_c"):
+            # Single combined clip (universal_greeting + {prefix}_greet_main
+            # concatenated, same text, no re-TTS) instead of two sequential
+            # <Play> tags. Confirmed live 2026-07-15: 253 outbound calls had
+            # 0 conversation turns despite connecting — 82% were react_a/b/c,
+            # clustered at 6-15s, matching exactly the two-clip greeting's
+            # playback length (customers hanging up before the Stream ever
+            # got a chance to listen). Total spoken content is unchanged;
+            # this only removes the inter-clip gap between the two Plays.
+            audio_url = f"{BASE_URL}/audio/static/{prefix}_greet_combined_hi.wav"
+            play_tag = f"<Play>{audio_url}</Play>"
+        else:
+            greet_key = "react_greet_main"
+            audio_url = f"{BASE_URL}/audio/static/{greet_key}_hi.wav"
+            universal_greeting_url = f"{BASE_URL}/audio/static/universal_greeting_hi.wav"
+            play_tag = f"<Play>{universal_greeting_url}</Play><Play>{audio_url}</Play>"
     elif campaign == "fresh_cta":
         # No universal-greeting prefix line — fresh_greet_* already opens with
         # its own "Namaste ji". Product comes from the promoted outbound_leads
@@ -1735,6 +2068,38 @@ async def recording_done(request: Request):
 
     return PlainTextResponse("OK")
 
+async def _is_dnc(to: str) -> bool:
+    """
+    Checked by /trigger-call before dialing — this endpoint previously had
+    NO dnc check at all, dialing immediately regardless of outbound_leads
+    status. Confirmed live: a team testing number (+918799712556) was
+    already marked dnc=true in outbound_leads yet kept getting called,
+    because every one of those calls came through this endpoint, which never
+    looked the flag up. Same phone.eq OR-match pattern (+ and bare digits)
+    used elsewhere in this codebase for outbound_leads lookups, since the
+    column is stored inconsistently across write paths.
+    """
+    sb_url = os.getenv("SUPABASE_URL")
+    sb_key = os.getenv("SUPABASE_SERVICE_KEY")
+    if not sb_url:
+        return False
+    to_clean = to.strip()
+    to_bare  = to_clean.lstrip("+")
+    phone_or = ",".join(f"phone.eq.{v}" for v in {to_clean, f"+{to_bare}", to_bare})
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.get(
+                f"{sb_url}/rest/v1/outbound_leads",
+                headers={"apikey": sb_key, "Authorization": f"Bearer {sb_key}"},
+                params={"or": f"({phone_or})", "select": "dnc", "limit": "1"},
+            )
+        rows = r.json()
+        return bool(rows and rows[0].get("dnc"))
+    except Exception as exc:
+        logger.error(f"/trigger-call dnc check failed for {to}: {exc}")
+        return False  # fail open on lookup errors — don't block calls on a transient DB hiccup
+
+
 @app.post("/trigger-call")
 async def trigger_call(request: Request):
     body     = await request.json()
@@ -1746,6 +2111,16 @@ async def trigger_call(request: Request):
     wa_decline_confirm = body.get("wa_decline_confirm", False)
     if not to:
         return {"error": "Missing 'to'"}
+
+    if await _is_dnc(to):
+        logger.warning(f"/trigger-call BLOCKED — {to} is marked dnc in outbound_leads")
+        return {"status": "blocked", "reason": "dnc", "to": to}
+
+    if not is_calling_window(campaign):
+        now_ist = datetime.now(IST).strftime("%H:%M")
+        end_hour = CALL_END_HOUR_BY_CAMPAIGN.get(campaign, CALL_END_HOUR_DEFAULT)
+        logger.warning(f"/trigger-call BLOCKED — {to} campaign={campaign or 'generic'} outside {CALL_START_HOUR}:00-{end_hour}:00 IST window (now {now_ist} IST)")
+        return {"status": "blocked", "reason": "outside_calling_window", "to": to}
 
     campaign_param   = f"&campaign={campaign}" if campaign else ""
     decline_param    = "&wa_decline_confirm=1" if wa_decline_confirm else ""
@@ -1788,8 +2163,14 @@ async def hangup(request: Request):
         session.customer_name  = _meta.get("name", "")
         session.wa_decline_confirm = _meta.get("wa_decline_confirm", False)
         session.fresh_product = _meta.get("product", "")
+        # call_cycle also only ever gets set in the WS handler (webhook.py's
+        # /ws/{call_uuid}) — for calls where the Stream never connects (the
+        # session falls back to a bare CallSession above), it must be
+        # restored here too or _resolve_call_number() defaults it to 1
+        # regardless of what call_cycle the greeting actually used.
+        session.call_cycle = _meta.get("call_cycle", "")
         if session.campaign:
-            logger.info(f"[{call_uuid}] Hangup: restored campaign={session.campaign} from meta")
+            logger.info(f"[{call_uuid}] Hangup: restored campaign={session.campaign} call_cycle={session.call_cycle or '1'} from meta")
 
     logger.info(
         f"[{call_uuid}] Session at hangup → "
@@ -1800,6 +2181,12 @@ async def hangup(request: Request):
         f"turns={session.turn_count} | "
         f"wa_sent={getattr(session, 'wa_sent', False)} | "
         f"transcript_len={len(getattr(session, 'conversation', []))}"
+    )
+    audit_event(
+        call_uuid, "call_end", turn=session.turn_count,
+        final_state=getattr(session, "react_state", None) or session.state,
+        turn_count=session.turn_count,
+        wa_sent=getattr(session, "wa_sent", False),
     )
 
     # Write call summary to Supabase (existing logic — unchanged)
@@ -1828,6 +2215,55 @@ async def health():
         "active_calls": len(sessions),
         "sessions": list(sessions.keys())
     }
+
+@app.get("/lead-followup-status")
+async def lead_followup_status(phones: str):
+    """
+    Read-only CRM-facing lookup — current call_cycle, campaign_type, last
+    call outcome, next_retry_at, and visit_date/visit_date_status for one
+    or more leads. `phones` is a comma-separated list (a single phone works
+    the same way, just one element). No writes; does not affect dispatch or
+    eligibility. See supabase_calling.get_followup_status() for the query.
+    """
+    from supabase_calling import get_followup_status
+    phone_list = [p.strip() for p in phones.split(",") if p.strip()]
+    if not phone_list:
+        raise HTTPException(status_code=400, detail="phones query param required")
+    results = await get_followup_status(phone_list)
+    return {"results": results}
+
+
+@app.get("/lead-call-history")
+async def lead_call_history(phones: str):
+    """
+    Read-only CRM-facing lookup — outbound call-attempt history (called_count,
+    answered_count, pickup_rate) for one or more leads. `phones` is a
+    comma-separated list, same convention as /lead-followup-status. Outbound
+    calls only (see supabase_calling.get_call_history() docstring for why).
+    Phones with no matching call_logs rows are still returned with
+    called_count=0 / pickup_rate=None; phones whose leads row is dnc=true are
+    omitted entirely. No writes; does not affect dispatch or eligibility.
+    """
+    from supabase_calling import get_call_history
+    phone_list = [p.strip() for p in phones.split(",") if p.strip()]
+    if not phone_list:
+        raise HTTPException(status_code=400, detail="phones query param required")
+    results = await get_call_history(phone_list)
+    return {"results": results}
+
+
+@app.post("/walkin-followup/{walkin_id}")
+async def walkin_followup(walkin_id: str):
+    """
+    Queues one follow-up call for a walk-in visit (walkins table). No
+    auto-fire timing — caller (CRM button, or manual) decides when to hit
+    this. Capped at 3 total per walk-in; see walkin_followup.py.
+    """
+    from walkin_followup import schedule_next_walkin_followup_call
+    result = await schedule_next_walkin_followup_call(walkin_id)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info",

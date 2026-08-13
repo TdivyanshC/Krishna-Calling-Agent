@@ -95,6 +95,16 @@ STATIC_RESPONSES = {
         "en":       "Thank you so much for calling. Have a wonderful day from all of us at Krishna Furniture!",
     },
 
+    # Forced exit when the caller has clearly rejected/hung up on us
+    # (rejection_signals threshold) or made an explicit DNC request —
+    # apology + acknowledgment + soft close, deliberately no CTA/WhatsApp
+    # push. Pre-cached like every other key here, never a live TTS call.
+    "graceful_decline": {
+        "hinglish": "Ji bilkul, samajh gayi. Aapka samay lene ke liye maafi chahti hoon. Aapka din shubh ho!",
+        "hi":       "जी बिल्कुल, समझ गई। आपका समय लेने के लिए माफ़ी चाहती हूँ। आपका दिन शुभ हो!",
+        "en":       "Of course, I understand. Sorry for taking your time. Have a good day!",
+    },
+
     # ── Outbound response handlers ────────────────────────────────────────────
     "hook_positive": {
         "hi": "बहुत अच्छा! देखिए, इस महीने हमारे store में 35% तक की छूट चल रही है — और कुछ बेहतरीन नया collection भी आया है। आप किस तरह का furniture देख रहे हैं — sofa, bed, dining, या कुछ और?",

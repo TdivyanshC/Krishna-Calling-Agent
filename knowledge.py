@@ -707,3 +707,67 @@ STORE KNOWLEDGE:
 Current offers: Flat 40% off. Exchange: 25%+25% off.
 Plants: Kherki Daula & Bamdoli. Pan India delivery.
 Head branch: Sector 14, Gurugram. Mon–Sun 10am–8pm."""
+
+
+_PRICE_RE = re.compile(r"₹\s*([\d,]+)")
+
+# Hardcoded offer figures from build_llm_context()'s "Current offers" line —
+# not present in faq_database.json, so listed here explicitly rather than
+# scanned. Kept in sync by hand with the string above.
+_HARDCODED_GROUNDED_PRICES = set()
+
+
+def _grounded_prices() -> set[int]:
+    """
+    Every ₹ figure that actually appears in the FAQ knowledge base — category
+    scripts, price_ranges, follow_up_questions, all of it — walked
+    recursively rather than re-parsing build_llm_context()'s already-truncated
+    (script[:120]) summary, so this stays correct even for figures that get
+    cut off the LLM's actual prompt. This is the full set of prices the LLM
+    is allowed to state as fact; anything else it quotes is unverified.
+
+    Also scans DEVANAGARI_OVERRIDES -- confirmed via regression audit
+    (2026-07-15) that this was previously missing: build_llm_context() shows
+    the LLM DEVANAGARI_OVERRIDES text (via `DEVANAGARI_OVERRIDES.get(cid,
+    cat["response"]["script"])`) as the ground truth for what it's allowed to
+    say, but this function only ever scanned matcher.categories (the raw
+    faq_database.json). Real prices that only live in DEVANAGARI_OVERRIDES
+    (₹34,000/₹33,000/₹76,000 sofa, ₹71,000 bed, ₹1,19,000 dining, ₹12,000/
+    ₹20,000 office) were never in the grounded set, so a 100%-correct,
+    script-verbatim reply quoting them was wrongly flagged as fabricated.
+    Live-reproduced: reply_has_ungrounded_price() on the verbatim
+    product_specific_sofa override returned True before this fix.
+    """
+    def _scan(obj, prices):
+        if isinstance(obj, str):
+            for m in _PRICE_RE.finditer(obj):
+                prices.add(int(m.group(1).replace(",", "")))
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                _scan(v, prices)
+        elif isinstance(obj, list):
+            for v in obj:
+                _scan(v, prices)
+
+    prices = set(_HARDCODED_GROUNDED_PRICES)
+    _scan(_get_matcher().categories, prices)
+    _scan(DEVANAGARI_OVERRIDES, prices)
+    return prices
+
+
+def reply_has_ungrounded_price(reply: str) -> bool:
+    """
+    True if `reply` states a specific rupee figure that isn't anywhere in the
+    real knowledge base — i.e. the LLM invented it. Confirmed live: on call
+    50845de5 (2026-06-09) the LLM fabricated "₹33,000 से शुरू होती है" for a
+    "lobby chair set" that doesn't exist anywhere in faq_database.json — its
+    own system prompt's "NEVER make up prices" instruction did not stop it.
+    Caller (webhook.llm_reply) should reject/regenerate on True, not play the
+    reply as-is.
+    """
+    grounded = _grounded_prices()
+    for m in _PRICE_RE.finditer(reply):
+        price = int(m.group(1).replace(",", ""))
+        if price not in grounded:
+            return True
+    return False

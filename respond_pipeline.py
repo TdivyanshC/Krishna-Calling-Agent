@@ -347,6 +347,7 @@ def _source_to_static_key(source: str, lang: str) -> Optional[str]:
         "obj_think_wrapup":    "obj_think_wrapup",
         "obj_online_wrapup":   "obj_online_wrapup",
         "goodbye_warm":        "goodbye_warm",
+        "graceful_decline":    "graceful_decline",
         "hook_positive":       "hook_positive",
         "hook_hesitant":       "hook_hesitant",
         "hook_negative_1":     "hook_negative_1",

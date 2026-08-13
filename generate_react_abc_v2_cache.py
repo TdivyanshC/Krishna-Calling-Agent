@@ -31,7 +31,24 @@ SPEAKER_MAP = {
 # correct per-plan voice, regardless of whether its text changed. Necessary
 # because changing the voice mapping affects ALL keys, not just edited ones.
 FORCE_REGEN_ALL = False
-FORCE_REGEN = set()  # unused when FORCE_REGEN_ALL is True
+# 2026-08-11: text changed in place for these 3 (dropped "furniture exchange"
+# wording so call2/3 reads correctly regardless of which offer Call 1
+# pitched) -- same key names, so the stale cached audio must be force-deleted
+# or it'll keep serving the old "exchange" wording forever.
+#
+# 2026-08-13: user feedback -- {ra,rb,rc}_q_location (all three, generated
+# 2026-07-09, the original cache batch) and {ra,rb,rc}_q_price_range (all
+# three, generated earlier today) both sounded audibly inconsistent with the
+# rest of a real call. q_location is 5 weeks older than most of the rest of
+# a typical call's audio (much of it regenerated this week for the sale
+# rollout) -- plausible Sarvam voice/model drift between batches even with
+# identical parameters. Force-regenerating both sets fresh, together, so
+# every file in this specific set comes from the same API state.
+FORCE_REGEN = {
+    "c2_greet_reorient", "c2_wa_check", "c3_greet_reorient",
+    "ra_q_location", "rb_q_location", "rc_q_location",
+    "ra_q_price_range", "rb_q_price_range", "rc_q_price_range",
+}
 
 # Keys removed from scripts — delete stale audio if present
 DELETED_KEYS = {"ra_wa_cta", "rc_close_conviction"}

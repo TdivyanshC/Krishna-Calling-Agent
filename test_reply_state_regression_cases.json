@@ -1,0 +1,3904 @@
+[
+ {
+  "id": "PRIC-001",
+  "category": "price_budget",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "mahenga hai bahut",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "REGRESSION CASE -- the real confirmed fabrication incident, call 50845de5-d2c0-414a-992e-88d7a00fa401 (2026-06-09): LLM invented a price for a non-existent 'lobby chair set' category. TRADE-OFF DISCOVERED 2026-07-15: fixing the DEVANAGARI_OVERRIDES grounding gap (see PRIC-008/009) means ₹33,000 is now correctly grounded as the real 3-seater sofa price -- but reply_has_ungrounded_price() only checks whether the NUMBER appears anywhere in the knowledge base, not whether it's attached to the right PRODUCT, so this exact incident (a fabricated price that coincidentally matches a real price for a different product) no longer gets caught. Fixing this properly needs category-aware grounding (verify the price against the specific product mentioned, not the whole KB) -- a larger change, flagged but not attempted here. Left failing deliberately rather than silently passed."
+ },
+ {
+  "id": "PRIC-002",
+  "category": "price_budget",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "mahenge hain ye rates",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-003",
+  "category": "price_budget",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "bahut zyada rate hai",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-004",
+  "category": "price_budget",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "budget nahi hai itna",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-005",
+  "category": "price_budget",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "afford nahi kar sakta itna",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-006",
+  "category": "price_budget",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "costly lag raha hai mujhe",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-007",
+  "category": "price_budget",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "महंगा है ये तो",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-008",
+  "category": "price_budget",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "महंगे हैं दोनों ऑप्शन",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-009",
+  "category": "price_budget",
+  "call_tag": "call2 WA_CHECK",
+  "source": "constructed",
+  "input": "बहुत रेट ज़्यादा है इनका",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-010",
+  "category": "price_budget",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "रेट ज़्यादा लग रहा है",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-011",
+  "category": "price_budget",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "बजट नहीं है अभी इतना",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean expensive-objection phrasing, no 'kya' interference"
+ },
+ {
+  "id": "PRIC-012",
+  "category": "price_budget",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "देख लिया जी मैडम, ये तो बहुत रेट है, महंगे हैं।",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "real customer turn, call 8d46a889 per fix history — price objection before WA confirm"
+ },
+ {
+  "id": "PRIC-013",
+  "category": "price_budget",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "mahenga hai kya isse kam nahi hoga",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "'kya'-phrased price question -- primary check is that it is NOT misread as 'please repeat' (repeat intent keyword list contains bare 'kya'/'क्या')"
+ },
+ {
+  "id": "PRIC-014",
+  "category": "price_budget",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "बहुत महंगा है, क्या इससे कम में नहीं मिलेगा",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "'kya'-phrased price question -- primary check is that it is NOT misread as 'please repeat' (repeat intent keyword list contains bare 'kya'/'क्या')"
+ },
+ {
+  "id": "PRIC-015",
+  "category": "price_budget",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kya itna hi lagega ya kam ho sakta hai",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "'kya'-phrased price question -- primary check is that it is NOT misread as 'please repeat' (repeat intent keyword list contains bare 'kya'/'क्या')"
+ },
+ {
+  "id": "PRIC-016",
+  "category": "price_budget",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "final price kya hai isme",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "'kya'-phrased price question -- primary check is that it is NOT misread as 'please repeat' (repeat intent keyword list contains bare 'kya'/'क्या')"
+ },
+ {
+  "id": "PRIC-017",
+  "category": "price_budget",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "kya rate fix hai ya negotiate ho sakta hai",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "'kya'-phrased price question -- primary check is that it is NOT misread as 'please repeat' (repeat intent keyword list contains bare 'kya'/'क्या')"
+ },
+ {
+  "id": "PRIC-018",
+  "category": "price_budget",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "online mein sasta mil raha hai isse",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "FIXED 2026-07-15: same bridging-filler fix as MULT-002 -- 'online mein sasta' now matches the keyword 'online sasta'. Regression guard."
+ },
+ {
+  "id": "PRIC-019",
+  "category": "price_budget",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "amazon pe kam rate hai",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online-cheaper phrasing"
+ },
+ {
+  "id": "PRIC-020",
+  "category": "price_budget",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "flipkart pe better deal hai",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online-cheaper phrasing"
+ },
+ {
+  "id": "PRIC-021",
+  "category": "price_budget",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "ऑनलाइन सस्ता है इससे तो",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online-cheaper phrasing"
+ },
+ {
+  "id": "PRIC-022",
+  "category": "price_budget",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "अमेज़न पे कम में मिल रहा है",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online-cheaper phrasing"
+ },
+ {
+  "id": "PRIC-023",
+  "category": "price_budget",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kitna paisa lagega total mujhe batao",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "generic 'how much total' question -- no dedicated price-quote intent exists in this funnel (script always deflects to WhatsApp/showroom); should not misfire"
+ },
+ {
+  "id": "PRIC-024",
+  "category": "price_budget",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "पूरा खर्चा कितना आएगा",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "generic 'how much total' question -- no dedicated price-quote intent exists in this funnel (script always deflects to WhatsApp/showroom); should not misfire"
+ },
+ {
+  "id": "PRIC-025",
+  "category": "price_budget",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "total kitna hoga sab milakar",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "generic 'how much total' question -- no dedicated price-quote intent exists in this funnel (script always deflects to WhatsApp/showroom); should not misfire"
+ },
+ {
+  "id": "PRIC-026",
+  "category": "price_budget",
+  "call_tag": "call2 WA_CHECK",
+  "source": "constructed",
+  "input": "exact amount kitna banega",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "generic 'how much total' question -- no dedicated price-quote intent exists in this funnel (script always deflects to WhatsApp/showroom); should not misfire"
+ },
+ {
+  "id": "PRIC-027",
+  "category": "price_budget",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "1 lakh tak toh sahi hai lekin usse zyada nahi de sakta",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "digit '1' present in a budget-ceiling statement, not a visit date -- FIXED 2026-07-15: appointment_confirm now requires the digit to be adjacent to a real date-context word (_has_date_context_digit), so '1 lakh' no longer confirms. Regression guard."
+ },
+ {
+  "id": "PRIC-028",
+  "category": "price_budget",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "real",
+  "input": "और टॉप कार मॉडल्स ऑफ योर चॉप।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment logged during a price-adjacent turn (unclear ASR) -- must not misfire"
+ },
+ {
+  "id": "PROD-001",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "exchange kaise hoga samjhao mujhe",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-002",
+  "category": "product_specs",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kya offer hai bataiye detail mein",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-003",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kaise hoga ye poora process",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-004",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "एक्सचेंज कैसे होगा ये",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-005",
+  "category": "product_specs",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "क्या मतलब है इस ऑफर का",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-006",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "aur batao isme kya kya milega",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-007",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "detail batao poori offer ki",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-008",
+  "category": "product_specs",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "पुराना फर्नीचर कैसे लोगे बताओ",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean offer_clarify phrasing"
+ },
+ {
+  "id": "PROD-009",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "sofa ka fabric kaunsa hai leather ya cloth",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-010",
+  "category": "product_specs",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "bed mein storage hai kya niche",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-011",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "wardrobe kitne door ka hai",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-012",
+  "category": "product_specs",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "dining table lakdi ka hai ya laminate",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-013",
+  "category": "product_specs",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kaunsa material use karte ho furniture mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-014",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "size kya hoga sofa set ka",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuine product-spec question (material/size/storage) -- no dedicated intent exists for this in the reactivation funnel (it's an exchange-offer script, not a catalog); should fall through safely, not misfire"
+ },
+ {
+  "id": "PROD-015",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "bed mein storage hai kya niche ki taraf",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "'kya' inside a genuine spec question -- must not be read as 'please repeat'"
+ },
+ {
+  "id": "PROD-016",
+  "category": "product_specs",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "material kya hai sofa ka, genuine leather hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "'kya' used twice in a genuine spec question"
+ },
+ {
+  "id": "PROD-017",
+  "category": "product_specs",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "यह व्हाट्सएप नंबर है, आप इसी पर भेज दीजिए।",
+  "expected": {
+   "intents_contains": [],
+   "appointment_confirmed": false
+  },
+  "note": "real customer turn -- customer is confirming their WhatsApp number, a natural 'please send it here' request. wa_ok's keyword list is Hinglish-heavy ('bhejo','bhej do') and has no Devanagari 'भेज दीजिए'/'भेजिए' entries at all, so this legitimately matches nothing -- gap, business-correct would be wa_ok:true"
+ },
+ {
+  "id": "PROD-018",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "real",
+  "input": "ये वेम टूल लेना था तो फर्नीचर का सामान थोड़ा भी काम चल रहा है करके।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment (unclear meaning) during offer discussion -- must not misfire"
+ },
+ {
+  "id": "PROD-019",
+  "category": "product_specs",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kaunse colours available hain furniture mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "off-script spec/brand question -- no coverage, must degrade safely"
+ },
+ {
+  "id": "PROD-020",
+  "category": "product_specs",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "design catalogue dikha sakte ho kya",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "off-script spec/brand question -- no coverage, must degrade safely"
+ },
+ {
+  "id": "PROD-021",
+  "category": "product_specs",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "brand kaunsa hai ye, kisi company ka hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "off-script spec/brand question -- no coverage, must degrade safely"
+ },
+ {
+  "id": "DELI-001",
+  "category": "delivery_logistics",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "delivery kab tak ho jayegi",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-002",
+  "category": "delivery_logistics",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "kitne din mein milega saman",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-003",
+  "category": "delivery_logistics",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "delivery kaise hoti hai ghar tak",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-004",
+  "category": "delivery_logistics",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "डिलीवरी कब होगी",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-005",
+  "category": "delivery_logistics",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "कितने दिन में मिलेगा",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-006",
+  "category": "delivery_logistics",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "डिलीवरी कैसे करते हैं आप",
+  "expected": {
+   "intents_contains": [
+    "ask_delivery"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_delivery phrasing"
+ },
+ {
+  "id": "DELI-007",
+  "category": "delivery_logistics",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "delivery kab tak ho jayegi kya bata sakte ho",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "'kya' appended to a real delivery question -- must not misfire as repeat (also matches ask_delivery independently, so both should coexist)"
+ },
+ {
+  "id": "DELI-008",
+  "category": "delivery_logistics",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "kitne din mein milega saman ye jaan sakta hoon kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "'kya' appended to a real delivery question -- must not misfire as repeat (also matches ask_delivery independently, so both should coexist)"
+ },
+ {
+  "id": "DELI-009",
+  "category": "delivery_logistics",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "installation bhi karte ho ya khud lagana padega",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "adjacent logistics question (install/pickup/packing) -- no dedicated intent, must fall through safely"
+ },
+ {
+  "id": "DELI-010",
+  "category": "delivery_logistics",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "purana furniture uthane bhi aaoge kya",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "adjacent logistics question (install/pickup/packing) -- no dedicated intent, must fall through safely"
+ },
+ {
+  "id": "DELI-011",
+  "category": "delivery_logistics",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "packing kaisi hoti hai transport ke time",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "adjacent logistics question (install/pickup/packing) -- no dedicated intent, must fall through safely"
+ },
+ {
+  "id": "DELI-012",
+  "category": "delivery_logistics",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "दिल्ली से बाहर डिलीवरी होती है क्या आपकी",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "delivery-area question with 'क्या' -- repeat-misfire check"
+ },
+ {
+  "id": "DELI-013",
+  "category": "delivery_logistics",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "same din mil jayega ya wait karna padega",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "EMI_-001",
+  "category": "emi_payment",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "EMI ki facility hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-002",
+  "category": "emi_payment",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "क्या किस्तों में ले सकते हैं",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-003",
+  "category": "emi_payment",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "no cost EMI milegi kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-004",
+  "category": "emi_payment",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "card se payment ho jayega kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-005",
+  "category": "emi_payment",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "credit card pe EMI available hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-006",
+  "category": "emi_payment",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "किश्तों में पेमेंट हो सकता है क्या",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "EMI/payment has NO dedicated intent in REACT_ABC_INTENTS at all (this funnel's script never mentions payment methods); 'kya' phrasing makes this a live repeat-misfire risk -- primary assertion is that it does NOT get read as 'repeat'"
+ },
+ {
+  "id": "EMI_-007",
+  "category": "emi_payment",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "6 mahine ki EMI chahiye mujhe",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit present in an EMI question ('6 mahine') -- FIXED 2026-07-15: _has_date_context_digit excludes generic duration words like 'mahine' from the date-context set, so this no longer confirms. Regression guard."
+ },
+ {
+  "id": "EMI_-008",
+  "category": "emi_payment",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "3 installments mein de sakte hain kya",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit present in an EMI question ('3 installments') -- FIXED 2026-07-15: 'installments' isn't a date-context word, so _has_date_context_digit correctly rejects this. Regression guard."
+ },
+ {
+  "id": "EMI_-009",
+  "category": "emi_payment",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "cash discount milta hai kya extra",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "payment-method question, no digit/kya trap -- baseline should just fall through cleanly"
+ },
+ {
+  "id": "EMI_-010",
+  "category": "emi_payment",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "UPI se payment kar sakte hain kya showroom mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "payment-method question, no digit/kya trap -- baseline should just fall through cleanly"
+ },
+ {
+  "id": "EMI_-011",
+  "category": "emi_payment",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "advance dena padega kya booking ke liye",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "payment-method question, no digit/kya trap -- baseline should just fall through cleanly"
+ },
+ {
+  "id": "EMI_-012",
+  "category": "emi_payment",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "बिना ब्याज़ के किस्त मिलेगी क्या",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "no-interest EMI question, Devanagari 'क्या'"
+ },
+ {
+  "id": "DISC-001",
+  "category": "discount_negotiation",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "thoda aur discount de do please",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "negotiation ask -- no dedicated negotiation intent exists, should fall through safely, not fabricate a discount"
+ },
+ {
+  "id": "DISC-002",
+  "category": "discount_negotiation",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kuch aur kam nahi ho sakta rate",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "negotiation ask -- no dedicated negotiation intent exists, should fall through safely, not fabricate a discount"
+ },
+ {
+  "id": "DISC-003",
+  "category": "discount_negotiation",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "aur kam mein de do na",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "negotiation ask -- no dedicated negotiation intent exists, should fall through safely, not fabricate a discount"
+ },
+ {
+  "id": "DISC-004",
+  "category": "discount_negotiation",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "थोड़ा और कम कर दो प्लीज़",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "negotiation ask -- no dedicated negotiation intent exists, should fall through safely, not fabricate a discount"
+ },
+ {
+  "id": "DISC-005",
+  "category": "discount_negotiation",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "final rate bata do best wala",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "negotiation ask -- no dedicated negotiation intent exists, should fall through safely, not fabricate a discount"
+ },
+ {
+  "id": "DISC-006",
+  "category": "discount_negotiation",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "थोड़ा और डिस्काउंट मिल सकता है क्या",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "negotiation ask with 'kya' -- repeat-misfire check"
+ },
+ {
+  "id": "DISC-007",
+  "category": "discount_negotiation",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "aur discount milega kya isse zyada",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "negotiation ask with 'kya' -- repeat-misfire check"
+ },
+ {
+  "id": "DISC-008",
+  "category": "discount_negotiation",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "kya 50 percent tak ho sakta hai discount",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "negotiation ask with 'kya' -- repeat-misfire check"
+ },
+ {
+  "id": "DISC-009",
+  "category": "discount_negotiation",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "koi extra offer hai kya abhi ke liye",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "negotiation ask with 'kya' -- repeat-misfire check"
+ },
+ {
+  "id": "DISC-010",
+  "category": "discount_negotiation",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "25 percent nahi 40 percent chahiye mujhe",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digits inside a pure negotiation counter-offer ('25 percent'/'40 percent') -- FIXED 2026-07-15: neither digit is adjacent to a date-context word, _has_date_context_digit correctly rejects this. Regression guard."
+ },
+ {
+  "id": "DISC-011",
+  "category": "discount_negotiation",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "agar 50000 tak jaye toh sochunga",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit inside a negotiation counter-offer ('50000') -- FIXED 2026-07-15: not adjacent to any date-context word, _has_date_context_digit correctly rejects this. Regression guard."
+ },
+ {
+  "id": "DISC-012",
+  "category": "discount_negotiation",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "koi festival offer chal raha hai kya iske alawa",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc"
+   ]
+  },
+  "note": "further negotiation variants with 'kya'"
+ },
+ {
+  "id": "DISC-013",
+  "category": "discount_negotiation",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "purane customer ko extra discount milta hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc"
+   ]
+  },
+  "note": "further negotiation variants with 'kya'"
+ },
+ {
+  "id": "DISC-014",
+  "category": "discount_negotiation",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "group mein aayein toh zyada discount milega kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat",
+    "dnc"
+   ]
+  },
+  "note": "further negotiation variants with 'kya'"
+ },
+ {
+  "id": "DISC-015",
+  "category": "discount_negotiation",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "last price bata do bhaiya",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "DISC-016",
+  "category": "discount_negotiation",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "itne mein nahi hoga kam karo thoda",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "DISC-017",
+  "category": "discount_negotiation",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "aap thoda flexible ho sakte ho kya rate pe",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "DISC-018",
+  "category": "discount_negotiation",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "sirf exchange offer hi hai ya cash discount bhi hai",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "DISC-019",
+  "category": "discount_negotiation",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "negotiate kar sakte hain kya showroom mein aa kar",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-001",
+  "category": "availability",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "stock mein hai kya abhi",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "availability question -- no dedicated intent; flags repeat-misfire risk where 'kya' present, and digit-trap where a size number appears"
+ },
+ {
+  "id": "AVAI-002",
+  "category": "availability",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "abhi available hai ya wait karna padega",
+  "expected": {
+   "intents_forbidden": [],
+   "appointment_confirmed": false
+  },
+  "note": "availability question -- no dedicated intent; flags repeat-misfire risk where 'kya' present, and digit-trap where a size number appears"
+ },
+ {
+  "id": "AVAI-003",
+  "category": "availability",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "saare colours available hain kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "availability question -- no dedicated intent; flags repeat-misfire risk where 'kya' present, and digit-trap where a size number appears"
+ },
+ {
+  "id": "AVAI-004",
+  "category": "availability",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "king size bed available hai kya abhi",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "availability question -- no dedicated intent; flags repeat-misfire risk where 'kya' present, and digit-trap where a size number appears"
+ },
+ {
+  "id": "AVAI-005",
+  "category": "availability",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "6 seater dining available hai kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "digit in an availability question ('6 seater') -- FIXED 2026-07-15: 'seater' isn't a date-context word, _has_date_context_digit correctly rejects this. Regression guard."
+ },
+ {
+  "id": "AVAI-006",
+  "category": "availability",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "abhi ke abhi le ja sakta hoon kya showroom se",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-007",
+  "category": "availability",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "readymade milega ya order dena padega",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-008",
+  "category": "availability",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "limited stock hai ya hamesha milta hai",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-009",
+  "category": "availability",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "waiting period kitna hai naye order ka",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-010",
+  "category": "availability",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "out of stock hai kya koi model",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-011",
+  "category": "availability",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "sample piece dekhne ko milega kya showroom mein",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "AVAI-012",
+  "category": "availability",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "displayed wala hi milega ya naya banayenge",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "CUST-001",
+  "category": "customization",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "क्या कलर और साइज़ अपनी पसंद से बनवा सकते हैं",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-002",
+  "category": "customization",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "customize kar sakte hain kya sofa ka fabric",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-003",
+  "category": "customization",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "apni measurement ke hisab se bana denge kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-004",
+  "category": "customization",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "size customize ho sakta hai kya wardrobe ka",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-005",
+  "category": "customization",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "colour change karva sakte hain kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-006",
+  "category": "customization",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "रंग अपनी पसंद का करवा सकते हैं क्या",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "customization question, no dedicated intent in this funnel -- repeat-misfire check on the near-universal 'kya'/'क्या' phrasing"
+ },
+ {
+  "id": "CUST-007",
+  "category": "customization",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "apna design de sakte hain kya bnwane ke liye",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "CUST-008",
+  "category": "customization",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "fabric khud choose kar sakte hain showroom mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "CUST-009",
+  "category": "customization",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "existing furniture jaisa match karke bana doge kya",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "CUST-010",
+  "category": "customization",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "3 seater ko 2 seater jaisa customize karwa sakte hain",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "digit '3'/'2' inside a customization request -- digit-trap false positive"
+ },
+ {
+  "id": "CUST-011",
+  "category": "customization",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "special order de sakte hain kya extra bade size ke liye",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "CUST-012",
+  "category": "customization",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "khud ka fabric leke aaye toh use kar doge kya",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "COMP-001",
+  "category": "comparison_competitor",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "amazon pe kam rate hai isse",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online_cheaper phrasing (Amazon/Flipkart named)"
+ },
+ {
+  "id": "COMP-002",
+  "category": "comparison_competitor",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "flipkart pe better deal mil raha hai",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online_cheaper phrasing (Amazon/Flipkart named)"
+ },
+ {
+  "id": "COMP-003",
+  "category": "comparison_competitor",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "online better hai overall isse toh",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online_cheaper phrasing (Amazon/Flipkart named)"
+ },
+ {
+  "id": "COMP-004",
+  "category": "comparison_competitor",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "अमेज़न पे कम में मिल रहा है",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online_cheaper phrasing (Amazon/Flipkart named)"
+ },
+ {
+  "id": "COMP-005",
+  "category": "comparison_competitor",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "ऑनलाइन बेटर है इससे तो",
+  "expected": {
+   "intents_contains": [
+    "online_cheaper"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean online_cheaper phrasing (Amazon/Flipkart named)"
+ },
+ {
+  "id": "COMP-006",
+  "category": "comparison_competitor",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "Nilkamal mein sasta mil raha hai",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-007",
+  "category": "comparison_competitor",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "Urban Ladder pe better design hai",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-008",
+  "category": "comparison_competitor",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "Pepperfry pe dekha tha kam rate mein",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-009",
+  "category": "comparison_competitor",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "local dukaan mein kam mein mil raha hai",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-010",
+  "category": "comparison_competitor",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "bगल wale showroom mein sasta hai",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-011",
+  "category": "comparison_competitor",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "Godrej Interio walon ne kam bataya tha",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": "competitor named is NOT Amazon/Flipkart -- online_cheaper's keyword list is hardcoded to those two platforms, so any other competitor (Nilkamal, Urban Ladder, Pepperfry, a local shop, Godrej Interio) goes completely undetected -- gap, business-correct would treat this the same as an online_cheaper objection"
+ },
+ {
+  "id": "COMP-012",
+  "category": "comparison_competitor",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "dusri jagah offer better tha isse",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "COMP-013",
+  "category": "comparison_competitor",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "kisi aur showroom mein zyada discount mila",
+  "expected": {
+   "intents_forbidden": [
+    "online_cheaper",
+    "dnc"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "GENE-001",
+  "category": "general_complaints",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "ye sab fraud lagta hai mujhe",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean trust_issue phrasing"
+ },
+ {
+  "id": "GENE-002",
+  "category": "general_complaints",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "fake hai ye offer, jhooth bol rahi ho",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean trust_issue phrasing"
+ },
+ {
+  "id": "GENE-003",
+  "category": "general_complaints",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "sach mein aisa offer hai kya, vishwas nahi ho raha",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean trust_issue phrasing"
+ },
+ {
+  "id": "GENE-004",
+  "category": "general_complaints",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "scam lagta hai ye poora",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean trust_issue phrasing"
+ },
+ {
+  "id": "GENE-005",
+  "category": "general_complaints",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "फेक है ये पूरा ऑफर",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean trust_issue phrasing"
+ },
+ {
+  "id": "GENE-006",
+  "category": "general_complaints",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "manager se baat karwao mujhe",
+  "expected": {
+   "intents_contains": [
+    "escalate"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "GENE-007",
+  "category": "general_complaints",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "senior se milao mujhe abhi",
+  "expected": {
+   "intents_contains": [
+    "escalate"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "GENE-008",
+  "category": "general_complaints",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "complaint karna hai maine iski",
+  "expected": {
+   "intents_contains": [
+    "escalate"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "GENE-009",
+  "category": "general_complaints",
+  "call_tag": "call1_react GREETING",
+  "source": "real",
+  "input": "अरे क्या है आप बार-बार फोन लगाती हैं?",
+  "expected": {
+   "intents_contains": [
+    "not_interested"
+   ]
+  },
+  "note": "business-correct: should read as an implied complaint about repeated calling, not literally 'please repeat'. real customer turn -- actual matcher output is intents=['repeat'] because bare 'क्या' is a repeat-intent keyword; asserting the wrong-but-real behavior here is intentional so the harness flags it. See systemic finding on 'kya'->'repeat'."
+ },
+ {
+  "id": "GENE-010",
+  "category": "general_complaints",
+  "call_tag": "react_b GREETING",
+  "source": "real",
+  "input": "भाई साहब बहुत तंग कर दिया, कॉल करना बंद करो",
+  "expected": {
+   "intents_contains": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "real-style strong 'stop calling' phrasing without the exact 'yeh call'/'ना करें' wording the dnc list expects -- business-correct is dnc:true (explicit demand to stop calling), actual matcher only fires weak not_interested via 'बंद करो' -- gap"
+ },
+ {
+  "id": "GENE-011",
+  "category": "general_complaints",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "bilkul time waste hai ye sab",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "generic dissatisfaction, no clean intent match expected -- must not misfire as dnc"
+ },
+ {
+  "id": "GENE-012",
+  "category": "general_complaints",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "mujhe ye sab pasand nahi aa raha",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "generic dissatisfaction, no clean intent match expected -- must not misfire as dnc"
+ },
+ {
+  "id": "GENE-013",
+  "category": "general_complaints",
+  "call_tag": "call2 WA_CHECK",
+  "source": "constructed",
+  "input": "आपकी सर्विस ठीक नहीं है पहले भी",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "generic dissatisfaction, no clean intent match expected -- must not misfire as dnc"
+ },
+ {
+  "id": "GENE-014",
+  "category": "general_complaints",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "real",
+  "input": "मैं कह रहा हूँ, बिलकुल नहीं सुनना चाहते।",
+  "expected": {
+   "intents_contains": [
+    "not_interested"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "real customer turn -- clean not_interested match via 'नहीं सुनना'"
+ },
+ {
+  "id": "STOR-001",
+  "category": "store_timing_location",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "showroom kahan hai aapka",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_location phrasing"
+ },
+ {
+  "id": "STOR-002",
+  "category": "store_timing_location",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "address batao store ka",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_location phrasing"
+ },
+ {
+  "id": "STOR-003",
+  "category": "store_timing_location",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "कहां है शोरूम आपका",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_location phrasing"
+ },
+ {
+  "id": "STOR-004",
+  "category": "store_timing_location",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "लोकेशन क्या है स्टोर की",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_location phrasing"
+ },
+ {
+  "id": "STOR-005",
+  "category": "store_timing_location",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "kitne baje khulta hai store",
+  "expected": {
+   "intents_contains": [
+    "ask_timings"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_timings phrasing"
+ },
+ {
+  "id": "STOR-006",
+  "category": "store_timing_location",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "टाइमिंग क्या है दुकान की",
+  "expected": {
+   "intents_contains": [
+    "ask_timings"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_timings phrasing"
+ },
+ {
+  "id": "STOR-007",
+  "category": "store_timing_location",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "kitne baje tak khula rehta hai",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "'baje' is a bare appointment_confirm keyword, so a pure store-hours question false-triggered a confirm -- FIXED 2026-07-15 via _is_timing_question (interrogative 'kitne' + timing-context 'baje' together now block the confirm). Regression guard."
+ },
+ {
+  "id": "STOR-008",
+  "category": "store_timing_location",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "Sunday ko khula rehta hai kya store",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "day-name 'Sunday' inside a timing question false-triggered a confirm -- FIXED 2026-07-15 via _is_timing_question ('kya' + 'khula' together now block the confirm). Regression guard."
+ },
+ {
+  "id": "STOR-009",
+  "category": "store_timing_location",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "Gurgaon ke alawa Delhi mein bhi showroom hai kya",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "STOR-010",
+  "category": "store_timing_location",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "Monday band rehta hai kya aapka store",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "day-name 'Monday' in a closed-day question false-triggered a confirm -- FIXED 2026-07-15 via _is_timing_question ('kya' + 'band' together now block the confirm). Regression guard."
+ },
+ {
+  "id": "EXCH-001",
+  "category": "exchange",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "purana furniture kaise le jaoge",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-002",
+  "category": "exchange",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "value kaise milegi purane sofa ki",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-003",
+  "category": "exchange",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kaise calculate karte ho purane ki value",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-004",
+  "category": "exchange",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "पुराना फर्नीचर कैसे पिकअप करोगे",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-005",
+  "category": "exchange",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "वैल्यू कैसे मिलेगी पुराने की",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-006",
+  "category": "exchange",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kaise lenge purana wardrobe mera",
+  "expected": {
+   "intents_contains": [
+    "ask_valuation"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "clean ask_valuation phrasing"
+ },
+ {
+  "id": "EXCH-007",
+  "category": "exchange",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "kaise pickup hoga purana furniture, ghar aaoge kya",
+  "expected": {
+   "intents_contains": [
+    "offer_clarify",
+    "ask_valuation"
+   ]
+  },
+  "note": "matches both offer_clarify ('kaise') and ask_valuation ('kaise pickup') -- verified real overlap, not a bug"
+ },
+ {
+  "id": "EXCH-008",
+  "category": "exchange",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "kitna purana furniture chalega exchange mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "exchange eligibility/condition question -- no dedicated intent beyond value/process, must not misfire"
+ },
+ {
+  "id": "EXCH-009",
+  "category": "exchange",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "tuta hua furniture bhi lete ho exchange mein",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "exchange eligibility/condition question -- no dedicated intent beyond value/process, must not misfire"
+ },
+ {
+  "id": "EXCH-010",
+  "category": "exchange",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "2 piece exchange kar sakta hoon kya ek saath",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "exchange eligibility/condition question -- no dedicated intent beyond value/process, must not misfire"
+ },
+ {
+  "id": "EXCH-011",
+  "category": "exchange",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "sirf sofa exchange karna hai, baaki nahi",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "EXCH-012",
+  "category": "exchange",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "real",
+  "input": "हाँ मैडम, ले लेते हैं, कृष्णा फरीच से ही लेते हैं, लेकिन अभी थोड़ा सा बिजी था मैं, आप बाद में कॉल कर लीजिए प्लीज उसको। थैंक यू।",
+  "expected": {
+   "intents_contains": [
+    "busy"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "real customer turn -- agrees to exchange in principle but asks for a later callback; busy intent should fire"
+ },
+ {
+  "id": "APPO-001",
+  "category": "appointment_confirm_real",
+  "call_tag": "call2 DATE_ASK",
+  "source": "real",
+  "input": "मैं 15-16 तारीख को आऊंगा",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "real confirmed-appointment customer turn"
+ },
+ {
+  "id": "APPO-002",
+  "category": "appointment_confirm_real",
+  "call_tag": "call2 DATE_ASK",
+  "source": "real",
+  "input": "सैटरडे को फ्री रहेंगे",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "real confirmed-appointment customer turn"
+ },
+ {
+  "id": "APPO-003",
+  "category": "appointment_confirm_real",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "real",
+  "input": "हां, नेक्स्ट वीक सैटरडे को",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "real confirmed-appointment customer turn"
+ },
+ {
+  "id": "APPO-004",
+  "category": "appointment_confirm_real",
+  "call_tag": "call1_react APPOINTMENT",
+  "source": "real",
+  "input": "जुलाई 10",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "real confirmed-appointment customer turn"
+ },
+ {
+  "id": "APPO-005",
+  "category": "appointment_confirm_real",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "theek hai main 20 tareek ko aa jaunga",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-006",
+  "category": "appointment_confirm_real",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "saturday ko free hoon aa jaunga showroom",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-007",
+  "category": "appointment_confirm_real",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "मंगलवार को आ जाऊंगा मैं",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-008",
+  "category": "appointment_confirm_real",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "next monday ko aata hoon store",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-009",
+  "category": "appointment_confirm_real",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "6 august ko time hai mujhe",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-010",
+  "category": "appointment_confirm_real",
+  "call_tag": "fresh_cta APPOINTMENT",
+  "source": "constructed",
+  "input": "इस वीकेंड आ जाऊंगा मैं",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": "unambiguous digit-date or day-name confirmation"
+ },
+ {
+  "id": "APPO-001",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "real",
+  "input": "किलोमीटर का सर्कल का यू टर्न",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "REGRESSION CASE for the 2026-07-15 सर्कल/कल substring fix -- 'सर्कल' (circle) contains 'कल' as a raw substring but is one whole token; the tokenizer-based matcher must NOT treat this as 'kal'/tomorrow. This is the exact real transcript that exposed the bug."
+ },
+ {
+  "id": "APPO-002",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "call1_react PRESENT_OFFER",
+  "source": "real",
+  "input": "क्योंकि मैं एक वर्किंग स्टूडेंट हूँ",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "REGRESSION CASE for the day-suffix substring fix -- 'स्टूडेंट' (student) contains the raw substring 'डे' but is one whole token, must not be treated as a day-suffix ('...day')."
+ },
+ {
+  "id": "APPO-003",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "real",
+  "input": "तो कल बता सकेंगे जी बाहर जा रहे गए हुए",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "REGRESSION CASE for the deferral-gate fix (real transcript, call 85238e15 per fix history) -- contains the real word 'कल' (matches appointment_confirm) but is a deferral ('I'll tell you tomorrow, heading out now'), not a confirmation."
+ },
+ {
+  "id": "APPO-004",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "अंडे लेने जाना है अभी",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "'अंडे' (eggs) contains the raw substring 'डे' (day-suffix) but is one whole token -- same substring-trap class as स्टूडेंट, different word"
+ },
+ {
+  "id": "APPO-005",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "अंडे और सब्ज़ी लानी है बाज़ार से",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "'अंडे' (eggs) contains the raw substring 'डे' (day-suffix) but is one whole token -- same substring-trap class as स्टूडेंट, different word"
+ },
+ {
+  "id": "APPO-006",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "कलम घर पर भूल आया",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "words containing 'कल' as a raw substring (कलम=pen, कलर=colour) or a near-miss 'मुश्किल'(difficult) -- token-boundary regression check, same class as सर्कल"
+ },
+ {
+  "id": "APPO-007",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "कलर पसंद नहीं आया मुझे",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "words containing 'कल' as a raw substring (कलम=pen, कलर=colour) or a near-miss 'मुश्किल'(difficult) -- token-boundary regression check, same class as सर्कल"
+ },
+ {
+  "id": "APPO-008",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "मुश्किल है अभी टाइम निकालना",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "words containing 'कल' as a raw substring (कलम=pen, कलर=colour) or a near-miss 'मुश्किल'(difficult) -- token-boundary regression check, same class as सर्कल"
+ },
+ {
+  "id": "APPO-009",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "cricket match mein 100 run bane the",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit in nonsense ('100 run bane the') -- FIXED 2026-07-15 via _has_date_context_digit (digit not adjacent to any date-context word). Regression guard."
+ },
+ {
+  "id": "APPO-010",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "office mein 5 log baithe the meeting mein",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit in nonsense ('5 log baithe the') -- FIXED 2026-07-15 via _has_date_context_digit. Regression guard."
+ },
+ {
+  "id": "APPO-011",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "TV pe channel number 9 dekh raha tha",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit in nonsense ('channel number 9') -- FIXED 2026-07-15 via _has_date_context_digit. Regression guard."
+ },
+ {
+  "id": "APPO-012",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "1+1 kitna hota hai ye toh pata hai",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "digit in nonsense ('1+1 kitna hota hai') -- FIXED 2026-07-15 via _has_date_context_digit. Regression guard."
+ },
+ {
+  "id": "APPO-013",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "cricket match kal hai dekhna hai mujhe",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "bare 'kal' in an unrelated sentence ('cricket match kal hai') -- FIXED 2026-07-15 via _is_vague_time_without_commitment (no visiting-commitment verb present, so a lone vague time word no longer confirms). Regression guard."
+ },
+ {
+  "id": "APPO-014",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "kal se naya mahina shuru ho raha hai",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "bare 'kal' in an unrelated sentence -- FIXED 2026-07-15 via _is_vague_time_without_commitment. Regression guard."
+ },
+ {
+  "id": "APPO-015",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "बाहर जा रहा हूं अभी, फिर बताऊंगा",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "deferral phrase without any date word at all -- must stay unconfirmed trivially"
+ },
+ {
+  "id": "APPO-016",
+  "category": "appointment_traps_adversarial",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "will tell tomorrow once I check with my wife",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "English deferral phrase from the deferral-phrase list -- regression check on English coverage"
+ },
+ {
+  "id": "DNC_-001",
+  "category": "dnc_optout",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "मुझे कोई फर्नीचर एक्सचेंज नहीं करना, दोबारा कॉल ना करें।",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "REGRESSION CASE -- real customer turn, call 3cf6a87b, the confirmed live DNC-miss incident that motivated _is_explicit_optout()."
+ },
+ {
+  "id": "DNC_-002",
+  "category": "dnc_optout",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "कृपया अब कॉल मत कीजिये",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-003",
+  "category": "dnc_optout",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "इस नंबर पे दोबारा फोन मत करना",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-004",
+  "category": "dnc_optout",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "बस बहुत हो गया, अब कॉल मत करो",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-005",
+  "category": "dnc_optout",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "आइंदा कभी कॉल मत करना इस नंबर पर",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-006",
+  "category": "dnc_optout",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "dobara call na karo please",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-007",
+  "category": "dnc_optout",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "call mat kijiye ab is number pe",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "negation + call-word within the same clause -- should hit _is_explicit_optout"
+ },
+ {
+  "id": "DNC_-008",
+  "category": "dnc_optout",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "koi baat nahi, call karke bata dena jab discount ho",
+  "expected": {
+   "dnc_triggered": false
+  },
+  "note": "REGRESSION CASE -- the exact benign two-clause sentence that false-positived under a naive whole-utterance window before clause-splitting was added ('never mind' + 'call and let me know' are separate clauses, not an opt-out)"
+ },
+ {
+  "id": "DNC_-009",
+  "category": "dnc_optout",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "please don't call me again",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "fluent English opt-out phrasing -- business-correct is dnc:true, but _OPTOUT_NEGATION_WORDS only contains {मत,ना,नहीं,mat,na,nahi,nahin}, none of which match English 'don't'/'stop' -- gap, expect FAIL"
+ },
+ {
+  "id": "DNC_-010",
+  "category": "dnc_optout",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "stop calling me please",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "fluent English opt-out phrasing -- business-correct is dnc:true, but _OPTOUT_NEGATION_WORDS only contains {मत,ना,नहीं,mat,na,nahi,nahin}, none of which match English 'don't'/'stop' -- gap, expect FAIL"
+ },
+ {
+  "id": "DNC_-011",
+  "category": "dnc_optout",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "don't contact me anymore about this",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "fluent English opt-out phrasing -- business-correct is dnc:true, but _OPTOUT_NEGATION_WORDS only contains {मत,ना,नहीं,mat,na,nahi,nahin}, none of which match English 'don't'/'stop' -- gap, expect FAIL"
+ },
+ {
+  "id": "DNC_-012",
+  "category": "dnc_optout",
+  "call_tag": "react_b GREETING",
+  "source": "constructed",
+  "input": "mera number apni list se hata dena please",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "business-correct is dnc:true (explicit list-removal request); actual phrasing 'hata dena' doesn't match the exact listed 'list se hata do' string, and there's no call-word present for the proximity fallback to catch either -- gap, expect FAIL"
+ },
+ {
+  "id": "DNC_-013",
+  "category": "dnc_optout",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "भाई साहब बहुत तंग कर दिया, कॉल करना बंद करो",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "same case as in general_complaints -- strong 'stop calling' demand without exact 'yeh call'/'ना करें' phrasing -- gap, expect FAIL"
+ },
+ {
+  "id": "DNC_-014",
+  "category": "dnc_optout",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "harassment ho raha hai ye toh",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "exact listed dnc keyword phrasing"
+ },
+ {
+  "id": "DNC_-015",
+  "category": "dnc_optout",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "नंबर डिलीट करो मेरा अभी के अभी",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "exact listed dnc keyword phrasing"
+ },
+ {
+  "id": "DNC_-016",
+  "category": "dnc_optout",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "interested nahi hoon bilkul, hata do mera number",
+  "expected": {
+   "dnc_triggered": true
+  },
+  "note": "compound not_interested + explicit removal request, both dnc-listed phrases"
+ },
+ {
+  "id": "GARB-001",
+  "category": "garbled_stt",
+  "call_tag": "call1_react WHATSAPP_CTA",
+  "source": "real",
+  "input": "मैंने आपको ये कहा कि आपने मुझे भेज दिया, मैं देख लूंगा, अगर कुछ होगा तो मैं आपको",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-002",
+  "category": "garbled_stt",
+  "call_tag": "call1_react APPOINTMENT",
+  "source": "real",
+  "input": "हां फिर तो दोस्त ना घर बात कर कर आपके पास आएंगे।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-003",
+  "category": "garbled_stt",
+  "call_tag": "call1_react CLOSE",
+  "source": "real",
+  "input": "वे यू हैव फिनिश्ड रिकॉर्डिंग यू मे हैंग अप।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-004",
+  "category": "garbled_stt",
+  "call_tag": "call1_react WHATSAPP_CTA",
+  "source": "real",
+  "input": "और और दो टोले भेज रहे हैं तो देख लेंगे।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-005",
+  "category": "garbled_stt",
+  "call_tag": "call1_react PRESENT_OFFER",
+  "source": "real",
+  "input": "नो थैंक्स राइट नाउ वी आर नॉट इन मूड।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-006",
+  "category": "garbled_stt",
+  "call_tag": "call1_react GREETING",
+  "source": "real",
+  "input": "मैं गुड़गांव में नहीं रहता हूं और।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-007",
+  "category": "garbled_stt",
+  "call_tag": "call1_react WHATSAPP_CTA",
+  "source": "real",
+  "input": "लाइंस कंप्लांट रिपोर्ट।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-008",
+  "category": "garbled_stt",
+  "call_tag": "call1_react APPOINTMENT",
+  "source": "real",
+  "input": "पड़ा नहीं चला आता।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-009",
+  "category": "garbled_stt",
+  "call_tag": "call1_react GREETING",
+  "source": "real",
+  "input": "क्या अफरोज़ है।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-010",
+  "category": "garbled_stt",
+  "call_tag": "call1_react WHATSAPP_CTA",
+  "source": "real",
+  "input": "हम्म तो रह जाओ।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-011",
+  "category": "garbled_stt",
+  "call_tag": "call1_react PRESENT_OFFER",
+  "source": "real",
+  "input": "मेरा बॉडी।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/unclear STT fragment -- must not misfire into a compliance-critical intent"
+ },
+ {
+  "id": "GARB-012",
+  "category": "garbled_stt",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "बहुत बुरा हाल है भैया यहां से जाम है वैसे पर उधर जाम है जाम।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment from call2 transcripts -- must not misfire"
+ },
+ {
+  "id": "GARB-013",
+  "category": "garbled_stt",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "किलोमीटर का सर्कल का यू टर्न।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment from call2 transcripts -- must not misfire"
+ },
+ {
+  "id": "GARB-014",
+  "category": "garbled_stt",
+  "call_tag": "call2 DATE_ASK",
+  "source": "real",
+  "input": "चलो देखो बनाते प्रोग्राम।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment from call2 transcripts -- must not misfire"
+ },
+ {
+  "id": "GARB-015",
+  "category": "garbled_stt",
+  "call_tag": "call2 DATE_ASK",
+  "source": "real",
+  "input": "Thanks अमारी बेथ",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment from call2 transcripts -- must not misfire"
+ },
+ {
+  "id": "GARB-016",
+  "category": "garbled_stt",
+  "call_tag": "call2 WA_CHECK",
+  "source": "real",
+  "input": "व्हेन यू हैव।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment from call2 transcripts -- must not misfire"
+ },
+ {
+  "id": "GARB-017",
+  "category": "garbled_stt",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "real",
+  "input": "इफ यू वुड लाइक टू लीव एन एडिशनल मैसेज प्लीज रिप्लाई आफ्टर।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/voicemail-adjacent STT fragment from call3"
+ },
+ {
+  "id": "GARB-018",
+  "category": "garbled_stt",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "real",
+  "input": "मैम आप मेरी बात का जवाब देते ही नहीं हो।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/voicemail-adjacent STT fragment from call3"
+ },
+ {
+  "id": "GARB-019",
+  "category": "garbled_stt",
+  "call_tag": "call3 GREETING",
+  "source": "real",
+  "input": "आई एम सॉरी, दिस पर्सन इज नॉट अवेलेबल।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/voicemail-adjacent STT fragment from call3"
+ },
+ {
+  "id": "GARB-020",
+  "category": "garbled_stt",
+  "call_tag": "fresh_cta APPOINTMENT",
+  "source": "real",
+  "input": "द पर्सन यू आर स्पीकिंग विथ हैज़ पुट योर कॉल ऑन होल्ड, प्लीज़ स्टे ऑन द लाइन।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/IVR-adjacent STT fragment from fresh_cta"
+ },
+ {
+  "id": "GARB-021",
+  "category": "garbled_stt",
+  "call_tag": "fresh_cta APPOINTMENT",
+  "source": "real",
+  "input": "कि निजन को बात करना पिछड़ा हो।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled/IVR-adjacent STT fragment from fresh_cta"
+ },
+ {
+  "id": "GARB-022",
+  "category": "garbled_stt",
+  "call_tag": "call1_react PRESENT_OFFER",
+  "source": "real",
+  "input": "और ये सब ऑनलाइन दुकान में क्या क्या काउज़न दिया है?",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment (mined from fresh_lead but representative of the same ASR noise profile)"
+ },
+ {
+  "id": "GARB-023",
+  "category": "garbled_stt",
+  "call_tag": "call1_react WHATSAPP_CTA",
+  "source": "real",
+  "input": "पर जो कॉल ऑन होल्ड।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real garbled STT fragment (mined from fresh_lead but representative of the same ASR noise profile)"
+ },
+ {
+  "id": "GARB-024",
+  "category": "garbled_stt",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "real",
+  "input": "प्लीज स्टे ऑन द लाइन।",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ]
+  },
+  "note": "real machine/IVR-hold phrase -- detect_intents must not fire on it even though the separate _machine_phrases hang-up check (not covered by this suite) is what actually handles it in production"
+ },
+ {
+  "id": "OUT_-001",
+  "category": "out_of_domain",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "मुझे बिरयानी खानी है",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuinely off-domain nonsense -- should not fire any compliance-critical intent nor hallucinate a confirmed appointment"
+ },
+ {
+  "id": "OUT_-002",
+  "category": "out_of_domain",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "आपका पालतू कुत्ता कैसा है",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuinely off-domain nonsense -- should not fire any compliance-critical intent nor hallucinate a confirmed appointment"
+ },
+ {
+  "id": "OUT_-003",
+  "category": "out_of_domain",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "मौसम कैसा है आज",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuinely off-domain nonsense -- should not fire any compliance-critical intent nor hallucinate a confirmed appointment"
+ },
+ {
+  "id": "OUT_-004",
+  "category": "out_of_domain",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "aaj cricket match kaun jeeta",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuinely off-domain nonsense -- should not fire any compliance-critical intent nor hallucinate a confirmed appointment"
+ },
+ {
+  "id": "OUT_-005",
+  "category": "out_of_domain",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "mera phone charge nahi ho raha",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "FIXED 2026-07-15: 'phone' immediately followed by a device-state noun ('charge') is now excluded from _is_explicit_optout's call-word match -- an unrelated phone-battery complaint no longer triggers dnc. Regression guard."
+ },
+ {
+  "id": "OUT_-006",
+  "category": "out_of_domain",
+  "call_tag": "react_a GREETING",
+  "source": "constructed",
+  "input": "bhai tera naam kya hai",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "genuinely off-domain nonsense -- should not fire any compliance-critical intent nor hallucinate a confirmed appointment"
+ },
+ {
+  "id": "OUT_-007",
+  "category": "out_of_domain",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "movie dekhne jaana hai aaj raat",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "off-domain sentence with 'raat' (a vague time word, not a date) -- FIXED 2026-07-15 via _is_vague_time_without_commitment. Regression guard."
+ },
+ {
+  "id": "OUT_-008",
+  "category": "out_of_domain",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "cricket match kal hai dekhna hai bas",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "off-domain sentence containing 'kal' -- FIXED 2026-07-15 via _is_vague_time_without_commitment. Regression guard."
+ },
+ {
+  "id": "OUT_-009",
+  "category": "out_of_domain",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "TV pe channel 9 chal raha tha bas",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": "off-domain sentence containing a digit -- FIXED 2026-07-15 via _has_date_context_digit. Regression guard."
+ },
+ {
+  "id": "OUT_-010",
+  "category": "out_of_domain",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "gxjkq snfoo qpwo random noise not_a_real_word blah",
+  "expected": {
+   "intents_forbidden": [
+    "dnc",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": "pure ASCII noise / non-word tokens -- must resolve to no intents at all"
+ },
+ {
+  "id": "MULT-001",
+  "category": "multi_intent",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "mahenga hai lekin saturday ko aa jaunga",
+  "expected": {
+   "intents_contains": [
+    "expensive",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": true
+  },
+  "note": "price objection AND a real confirmation in one utterance -- both intents present, and the compound confirm logic should still resolve True since 'saturday' is a genuine date word"
+ },
+ {
+  "id": "MULT-002",
+  "category": "multi_intent",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "whatsapp bhi bhej do aur showroom ka address bhi batao",
+  "expected": {
+   "intents_contains": [
+    "ask_location"
+   ]
+  },
+  "note": "FIXED 2026-07-15: _phrase_in_tokens now allows a single bridging filler word ('bhi') between the two tokens of a 2-token keyword phrase, so 'address bhi batao' now matches 'address batao'. Regression guard."
+ },
+ {
+  "id": "MULT-003",
+  "category": "multi_intent",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "interested nahi hoon lekin ek baar dekh lunga whatsapp pe",
+  "expected": {
+   "intents_contains": [
+    "not_interested"
+   ]
+  },
+  "note": "conflicting signal -- declines verbally but leaves a WhatsApp opening; not_interested must still fire so the not-interested branch takes priority over a soft opening"
+ },
+ {
+  "id": "MULT-004",
+  "category": "multi_intent",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "sochna hai lekin agar sahi laga to kal aa jaunga",
+  "expected": {
+   "intents_contains": [
+    "sochna_hai",
+    "appointment_confirm"
+   ],
+   "appointment_confirmed": true
+  },
+  "note": "hedge ('need to think') plus a real conditional-but-concrete date ('kal aa jaunga') -- compound confirm should resolve True since no deferral phrase is present and a genuine date word ('kal') is used to describe an actual visit, not a promise to decide later"
+ },
+ {
+  "id": "MULT-005",
+  "category": "multi_intent",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "trust nahi hai mujhe lekin 15 tareek ko dekh lunga aakar",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": true
+  },
+  "note": "skepticism plus a concrete digit date -- both should register"
+ },
+ {
+  "id": "MULT-006",
+  "category": "multi_intent",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "budget nahi hai abhi, kya EMI mil sakti hai kya",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ],
+   "intents_forbidden": [
+    "appointment_confirm"
+   ]
+  },
+  "note": "price objection plus an EMI question in one utterance -- expensive must fire; EMI has no intent and 'kya' repeated raises the usual repeat-misfire risk"
+ },
+ {
+  "id": "MULT-007",
+  "category": "multi_intent",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "not interested but agar 20 tareek ko free hua toh aa jaunga",
+  "expected": {
+   "intents_contains": [
+    "not_interested"
+   ],
+   "appointment_confirmed": true
+  },
+  "note": "explicit decline immediately followed by a concrete conditional date -- both intents should register; downstream state-machine priority (not tested here) decides which wins"
+ },
+ {
+  "id": "MULT-008",
+  "category": "multi_intent",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "expensive hai online se lekin phir bhi dekhna hai showroom",
+  "expected": {
+   "intents_contains": [
+    "expensive"
+   ]
+  },
+  "note": "price objection plus interest in visiting, no concrete date -- appointment_confirmed should stay False since no digit/day-name/appointment_confirm keyword is present"
+ },
+ {
+  "id": "MULT-009",
+  "category": "multi_intent",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "busy hoon lekin whatsapp pe bhej do details",
+  "expected": {
+   "intents_contains": [
+    "busy"
+   ]
+  },
+  "note": "busy plus a WhatsApp ask together"
+ },
+ {
+  "id": "MULT-010",
+  "category": "multi_intent",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "fraud lagta hai lekin 6 august ko aa hi jaunga dekhne",
+  "expected": {
+   "intents_contains": [
+    "trust_issue"
+   ],
+   "appointment_confirmed": true
+  },
+  "note": "distrust plus a concrete digit date -- both should register, confirm compound True"
+ },
+ {
+  "id": "BACK-001",
+  "category": "backchannel_filler",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "haan",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-002",
+  "category": "backchannel_filler",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "hmm",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-003",
+  "category": "backchannel_filler",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "theek hai",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-004",
+  "category": "backchannel_filler",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "ji",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-005",
+  "category": "backchannel_filler",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "achha",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-006",
+  "category": "backchannel_filler",
+  "call_tag": "react_c APPOINTMENT",
+  "source": "constructed",
+  "input": "haan ji theek hai",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-007",
+  "category": "backchannel_filler",
+  "call_tag": "call2 WA_CHECK",
+  "source": "constructed",
+  "input": "ओके",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-008",
+  "category": "backchannel_filler",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-009",
+  "category": "backchannel_filler",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "acha thik hai",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "BACK-010",
+  "category": "backchannel_filler",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "हूं",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc",
+    "not_interested",
+    "appointment_confirm"
+   ]
+  },
+  "note": "pure backchannel/filler -- must not misfire into confirming an appointment or any negative/compliance intent; 'positive'/'wa_ok' matching is acceptable and expected"
+ },
+ {
+  "id": "SARC-001",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "जब पैसे होंगे तब देखेंगे",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-002",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "देखते हैं क्या होता है",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-003",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "वाह क्या ऑफर है",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-004",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "पहले भी बहुत ऐसी कॉल्स आ चुकी हैं",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-005",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "aap logo ka roz ka kaam hai ye calls karna",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-006",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "bahut suna hai ye offer wala dialogue pehle bhi",
+  "expected": {
+   "appointment_confirmed": false,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-007",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "haan bilkul, kal hi aa jaunga, pakka",
+  "expected": {
+   "appointment_confirmed": true,
+   "intents_forbidden": [
+    "dnc"
+   ]
+  },
+  "note": "sarcastic/indirect refusal -- pure keyword matching cannot detect tone, so most of these correctly resolve to no strong intent; the primary check is that sarcasm does NOT get mistaken for a genuine positive/DNC signal. One case ('kal hi aa jaunga, pakka' - a sarcastic-sounding but textually identical to a real confirmation) is expected to (correctly, per the text alone) resolve appointment_confirmed=True -- text-only matching cannot distinguish sarcastic tone from sincerity, a fundamental limitation worth documenting rather than a bug to fix"
+ },
+ {
+  "id": "SARC-008",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_b PRESENT_OFFER",
+  "source": "constructed",
+  "input": "अरे वाह, बहुत बढ़िया ऑफर है, जरूर लूंगा (हंसते हुए)",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "SARC-009",
+  "category": "sarcasm_indirect",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "itna accha offer hai toh khud kyun nahi le lete",
+  "expected": {
+   "intents_forbidden": [
+    "dnc"
+   ],
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-001",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_a PRESENT_OFFER",
+  "source": "constructed",
+  "input": "yaar mujhe abhi busy hoon thoda time do",
+  "expected": {
+   "intents_contains": [
+    "busy"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-002",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_b WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "bro price kya hai final",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": "Hinglish 'kya' -- repeat-misfire check"
+ },
+ {
+  "id": "HING-003",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_c PRESENT_OFFER",
+  "source": "constructed",
+  "input": "sir woh discount wala scene kya hai exactly",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-004",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_a APPOINTMENT",
+  "source": "constructed",
+  "input": "main next Saturday free hoon so I'll come",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-005",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_b APPOINTMENT",
+  "source": "constructed",
+  "input": "whatsapp pe bhejo na jaldi se",
+  "expected": {
+   "intents_contains": [
+    "wa_ok"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-006",
+  "category": "hinglish_codeswitch",
+  "call_tag": "call2 DATE_ASK",
+  "source": "constructed",
+  "input": "not sure yaar thoda sochna padega",
+  "expected": {
+   "appointment_confirmed": false
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-007",
+  "category": "hinglish_codeswitch",
+  "call_tag": "call3 DECISION_DATE",
+  "source": "constructed",
+  "input": "ok theek hai I'll visit on 20th",
+  "expected": {
+   "appointment_confirmed": true
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-008",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_c WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "location bhejo pls, aana hai maybe next week",
+  "expected": {
+   "intents_contains": [
+    "wa_ok"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "HING-009",
+  "category": "hinglish_codeswitch",
+  "call_tag": "react_a WHATSAPP_CTA",
+  "source": "constructed",
+  "input": "actually main not really interested right now",
+  "expected": {
+   "intents_forbidden": [
+    "appointment_confirm"
+   ]
+  },
+  "note": "fluent English 'not interested' embedded in Hinglish -- not_interested keyword list is Hinglish/Devanagari only, so this legitimately may not match -- gap, primary assertion is just that it doesn't misfire positively"
+ },
+ {
+  "id": "HING-010",
+  "category": "hinglish_codeswitch",
+  "call_tag": "fresh_cta APPOINTMENT",
+  "source": "constructed",
+  "input": "matlab EMI available hai kya on this",
+  "expected": {
+   "intents_forbidden": [
+    "repeat"
+   ]
+  },
+  "note": ""
+ },
+ {
+  "id": "PRIC-001",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "real",
+  "input": "lobby chair set ₹33,000 से शुरू होती है",
+  "expected": {
+   "contains_ungrounded_price": true
+  },
+  "note": "REGRESSION CASE -- the real confirmed fabrication incident, call 50845de5-d2c0-414a-992e-88d7a00fa401 (2026-06-09): LLM invented a price for a non-existent 'lobby chair set' category. TRADE-OFF DISCOVERED 2026-07-15: fixing the DEVANAGARI_OVERRIDES grounding gap (see PRIC-008/009) means ₹33,000 is now correctly grounded as the real 3-seater sofa price -- but reply_has_ungrounded_price() only checks whether the NUMBER appears anywhere in the knowledge base, not whether it's attached to the right PRODUCT, so this exact incident (a fabricated price that coincidentally matches a real price for a different product) no longer gets caught. Fixing this properly needs category-aware grounding (verify the price against the specific product mentioned, not the whole KB) -- a larger change, flagged but not attempted here. Left failing deliberately rather than silently passed."
+ },
+ {
+  "id": "PRIC-002",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "recliner set ₹45,000 mein mil jayega",
+  "expected": {
+   "contains_ungrounded_price": true
+  },
+  "note": "fabricated price for a product category with zero faq_database.json coverage"
+ },
+ {
+  "id": "PRIC-003",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "murphy bed ₹2,50,000 ka hai humare paas",
+  "expected": {
+   "contains_ungrounded_price": true
+  },
+  "note": "fabricated price, implausibly specific figure not in the grounded set"
+ },
+ {
+  "id": "PRIC-004",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "study table ₹8,999 se start hoti hai",
+  "expected": {
+   "contains_ungrounded_price": true
+  },
+  "note": "fabricated price for a category the knowledge base doesn't itemize separately"
+ },
+ {
+  "id": "PRIC-005",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "sofa set ₹25,000 se shuru hota hai",
+  "expected": {
+   "contains_ungrounded_price": false
+  },
+  "note": "grounded figure -- 25000 is one of the 3 real prices in faq_database.json"
+ },
+ {
+  "id": "PRIC-006",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "hamare paas ₹5,000 wale bhi options hain aur ₹1,00,000 tak ke premium bhi",
+  "expected": {
+   "contains_ungrounded_price": false
+  },
+  "note": "two grounded figures in one reply"
+ },
+ {
+  "id": "PRIC-007",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "constructed",
+  "input": "delivery bilkul free hai, koi charge nahi",
+  "expected": {
+   "contains_ungrounded_price": false
+  },
+  "note": "no price figure at all -- baseline negative case"
+ },
+ {
+  "id": "PRIC-008",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "real",
+  "input": "सोफा में कई ऑप्शन हैं — २-सीटर ₹३४,००० से, ३-सीटर ₹३३,००० से, L-शेप ₹७६,००० से शुरू। कौन सा साइज़ चाहिए?",
+  "expected": {
+   "contains_ungrounded_price": false
+  },
+  "note": "CONFIRMED BUG (found during this audit, distinct from the known 33k fabrication incident): this is the verbatim, real DEVANAGARI_OVERRIDES['product_specific_sofa'] canned script -- exactly what the LLM's own system prompt (build_llm_context()) tells it is true and permitted to say. But _grounded_prices() only scans matcher.categories (the raw faq_database.json), never DEVANAGARI_OVERRIDES, so none of ₹34,000/₹33,000/₹76,000 are in the grounded set. reply_has_ungrounded_price() returns True for this 100%-correct, script-verbatim reply. Live-reproduced via direct call to knowledge.reply_has_ungrounded_price(). Expect FAIL."
+ },
+ {
+  "id": "PRIC-009",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "real",
+  "input": "किंग साइज़ बेड विद स्टोरेज ₹७१,००० से शुरू — हाइड्रोलिक और पुलआउट दोनों।",
+  "expected": {
+   "contains_ungrounded_price": false
+  },
+  "note": "same grounding-mismatch bug as above, DEVANAGARI_OVERRIDES['product_specific_bed'] verbatim (₹71,000 not in _grounded_prices()). Expect FAIL."
+ },
+ {
+  "id": "PRIC-010",
+  "category": "price_fabrication_bait",
+  "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
+  "source": "real",
+  "input": "ऑफिस फर्नीचर में टेबल बारह हज़ार से और कुर्सियाँ बीस हज़ार से शुरू।",
+  "expected": {
+   "contains_ungrounded_price": true
+  },
+  "note": "written-out Hindi number words ('बारह हज़ार'=12000, 'बीस हज़ार'=20000), not digit glyphs at all -- _PRICE_RE only matches a literal '₹' followed by digit characters, so this reply has NO regex-detectable price figure whatsoever and slips through reply_has_ungrounded_price() as 'no price stated' even though it does state prices (would need contains_ungrounded_price:True per business intent since it's actually the same DEVANAGARI_OVERRIDES['product_specific_office'] canned line with unverifiable figures if paraphrased without ₹ -- included to document detector blind spot to non-₹-formatted price statements). Expect FAIL (actual will be False, no exception, but for the wrong reason -- no price detected at all rather than being verified)."
+ }
+]
