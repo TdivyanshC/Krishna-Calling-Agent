@@ -783,7 +783,21 @@ def _tokenize(text: str) -> list[str]:
 # LLM-answer path as if it were a genuine question, and got the canned "I
 # don't have this detail, I'll WhatsApp it" non-sequitur instead of being
 # treated as a check-in and re-asked for the date like any other filler.
-_FILLER_CONTINUER_WORDS = {"hmm", "hmmm", "हम्म", "हम्म्म", "hello", "हेलो"}
+# "ye"/"ये"/"yeh"/"यह" added 2026-08-14 -- knowledge.py's ACK_WORDS already
+# labels these "pickup sounds" (a casual "yeah?"/half-heard ack, not the
+# demonstrative "this"). Confirmed live, same session, campaign ra: STT
+# rendered a customer utterance as "ये है।" then, next turn, "ये।" -- both
+# matched nothing and burned a full LLM-fallback round trip each time before
+# falling back to "sorry, didn't catch that". Deliberately NOT added to the
+# substring-matched "positive" list in knowledge_react_abc.py -- bare
+# "यह"/"ye" there would collide with real questions like "ye kitna hai"
+# (how much is this), the same false-positive class already rejected for
+# "यह" in that file. Safe here specifically because
+# _is_filler_continuer() only fires when EVERY token in the utterance is a
+# filler word -- "ye kitna hai" has two non-filler tokens and still falls
+# through to real intent matching untouched.
+_FILLER_CONTINUER_WORDS = {"hmm", "hmmm", "हम्म", "हम्म्म", "hello", "हेलो",
+                            "ye", "ये", "yeh", "यह"}
 
 
 def _is_filler_continuer(text: str) -> bool:
@@ -1183,6 +1197,28 @@ ya prefix mat do, sirf jawab bolo."""
 
 _REACT_LLM_GROUNDED_PRICES = {"₹33,000", "₹71,000", "₹1,19,000"}
 
+# Added 2026-08-14 -- confirmed live and reproduced directly (not a fluke):
+# fed "और ये।" ("and this") straight to _react_llm_classify() and it came
+# back ANSWERABLE every single time, then the generation step confidently
+# hallucinated "Arre, yeh offer sirf sofa, bed... ke liye hai" -- a fluent,
+# grounded-SOUNDING answer to something that was never a real question.
+# llama-3.1-8b-instant appears biased toward forcing short, low-content
+# fragments into ANSWERABLE rather than correctly recognizing them as
+# UNCLEAR. Real short questions in this domain ("EMI?", "warranty?") still
+# carry a real content word and are allowed through; this only catches
+# utterances built ENTIRELY out of bare connective/filler words with no
+# content word at all -- exactly the "और ये" shape, nothing broader.
+_LOW_CONTENT_WORDS = {
+    "aur", "और", "ye", "ये", "yeh", "यह", "woh", "वो", "toh", "तो",
+    "bhi", "भी", "hi", "ही", "ki", "कि", "jo", "जो", "tha", "था",
+    "thi", "थी", "the", "थे", "hai", "है",
+}
+
+
+def _is_low_content_fragment(t: str) -> bool:
+    tokens = _tokenize(t)
+    return bool(tokens) and all(tok in _LOW_CONTENT_WORDS for tok in tokens)
+
 
 async def _react_llm_classify(t: str, call_uuid: str) -> str:
     """Returns 'ANSWERABLE', 'UNKNOWN', or 'UNCLEAR' (defaults to UNCLEAR on any failure)."""
@@ -1207,6 +1243,9 @@ async def _react_llm_classify(t: str, call_uuid: str) -> str:
 
 
 async def _llm_fallback_reply_impl(t: str, call_uuid: str) -> str | None:
+    if _is_low_content_fragment(t):
+        logger.info(f"[{call_uuid}] low-content fragment '{t}' -- skipping LLM classify entirely, treating as UNCLEAR")
+        return _REACT_LLM_REPROMPT_TEXT
     label = await _react_llm_classify(t, call_uuid)
     if label == "UNCLEAR":
         return _REACT_LLM_REPROMPT_TEXT
