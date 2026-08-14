@@ -515,12 +515,14 @@ async def route_objection(
     resolve which of the 3 obj_repeat_generic_{voice} variants matches
     whatever voice is already speaking in this call.
 
-    Priority order below is the FULL intended routing order for the
-    eventual redesign. Right now only category 2 (repeat/didn't-understand)
-    is live -- every other category is a stub (commented out, matching the
-    intended condition/shape) and always falls through, so this function has
-    zero effect on price/trust/not-interested/timing turns today. Those get
-    wired in Phase 2 once new cache content exists for them.
+    Priority order below is repeat > price > trust > not-interested > timing.
+    Stale note removed 2026-08-13: this docstring used to say only category 2
+    (repeat) was live and 3-6 were stubs -- that's no longer true, all of
+    categories 2-6 below are live, gap-only dispatch (each scoped to the
+    specific (prefix, state) pairs whose own chain didn't already handle
+    that intent correctly; see each category's own comment for its
+    allowlist and why). Categories that already had correct handling in
+    their state's own chain are deliberately left alone here.
 
     Returns None if this dispatcher did not handle the turn -- caller must
     continue into its own state chain unchanged, exactly as before this
@@ -773,7 +775,15 @@ def _tokenize(text: str) -> list[str]:
 # false hot/warm leads, two of which blocked the caller's number. Filler
 # should move the call forward without being counted as a stronger version
 # of that same already-unreliable signal.
-_FILLER_CONTINUER_WORDS = {"hmm", "hmmm", "हम्म", "हम्म्म"}
+# "हेलो"/"hello" added 2026-08-13 -- knowledge.py's ACK_WORDS already treats
+# a bare "hello" mid-call as "caller checking if agent is there", not a real
+# question; this file's filler list never had the same carve-out. Confirmed
+# live on the Pratham call (919911117660): a customer utterance the STT
+# rendered as "हेलो" landed in APPOINTMENT state, got sent to the ungrounded
+# LLM-answer path as if it were a genuine question, and got the canned "I
+# don't have this detail, I'll WhatsApp it" non-sequitur instead of being
+# treated as a check-in and re-asked for the date like any other filler.
+_FILLER_CONTINUER_WORDS = {"hmm", "hmmm", "हम्म", "हम्म्म", "hello", "हेलो"}
 
 
 def _is_filler_continuer(text: str) -> bool:
@@ -1259,12 +1269,22 @@ async def llm_fallback_reply(t: str, call_uuid: str) -> str | None:
         return None
 
 
-async def play_dynamic_text(call_uuid: str, text: str, session=None) -> bool:
+async def play_dynamic_text(call_uuid: str, text: str, session=None, voice: str = "shreya") -> bool:
     """
     Speaks arbitrary text live (Sarvam TTS, dynamic hash-keyed cache) rather
     than a pre-cached static key — for llm_fallback_reply()'s generated
     replies, which have no fixed key since the text itself is dynamic.
     Mirrors play_key()'s cache-miss branch.
+
+    `voice` added 2026-08-13 -- every caller of this function already knows
+    which campaign voice (ritu/shreya/simran) the rest of the call is using
+    via PREFIX_VOICE_MAP, but it was never passed through, so get_speech()
+    always fell back to tts_engine's hardcoded "shreya" default regardless.
+    That produced an audible mid-call voice switch on every campaign except
+    "rb" whenever a reply came from this fallback path -- confirmed live on
+    the Pratham call (919911117660, campaign "ra"/"ritu"). Defaults to
+    "shreya" only for any caller that genuinely doesn't have a campaign
+    voice in scope.
     """
     if session is not None:
         if not hasattr(session, "conversation"):
@@ -1276,7 +1296,7 @@ async def play_dynamic_text(call_uuid: str, text: str, session=None) -> bool:
     try:
         from tts_engine import get_speech
         wav_bytes, audio_url, _ = await asyncio.wait_for(
-            get_speech(text, lang="hi", static_key=None), timeout=3.0
+            get_speech(text, lang="hi", static_key=None, speaker=voice), timeout=3.0
         )
         if audio_url:
             if session is not None:
@@ -1310,7 +1330,7 @@ def _pick_llm_filler_key(t: str, voice: str) -> str:
 
 
 async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
-    """Fire-and-forget: plays a topic-matched filler immediately, in parallel with the LLM call that follows."""
+    """Fire-and-forget: plays a topic-matched filler immediately."""
     key = _pick_llm_filler_key(t, voice)
     url = _static_url(key)
     if not url:
@@ -1321,6 +1341,44 @@ async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
     asyncio.create_task(_vobiz_play(call_uuid, url, turn=_turn, kind="filler"))
 
 
+# How long to wait for the LLM fallback before committing to a filler --
+# added 2026-08-13. Fillers are ~2-3s of spoken audio (measured: llm_filler_
+# generic ~1.95s, llm_filler_price ~2.2s, llm_filler_location ~3.1s), but
+# the classify-only UNCLEAR/UNKNOWN path (_react_llm_classify, 1.5s ceiling,
+# 5 output tokens) routinely returns in well under a second on Groq. The old
+# behavior fired the filler unconditionally and immediately, in parallel
+# with the LLM call -- so on the (apparently common) fast path, the reply's
+# Play request arrived at Vobiz while the filler was still mid-sentence, and
+# _vobiz_play()'s docstring already documents that Vobiz REPLACES whatever's
+# currently playing rather than queuing after it. Net effect: the filler
+# audibly cut off mid-word, which is exactly the "fillers get cut, feels
+# weird" behavior reported live. Fix: don't decide to play a filler until
+# the LLM call has actually run long enough that skipping one would leave
+# dead air. 0.45s is a judgment call, not measured against a real production
+# latency distribution -- audit_event() already logs per-call "tts"/
+# "play_result" elapsed times, so this is tunable later against real data if
+# it turns out to fire too often or too rarely.
+_FILLER_GRACE_SECONDS = 0.45
+
+
+async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str) -> str | None:
+    """
+    Runs llm_fallback_reply() and only plays a filler if it's still pending
+    past _FILLER_GRACE_SECONDS -- see that constant's docstring for why this
+    replaced firing the filler unconditionally and immediately. Total worst-
+    case reply latency is unchanged (the LLM task starts immediately either
+    way, this only delays the DECISION to also play a filler); only the
+    filler's start time moves later, past the point a fast reply would have
+    already made it redundant.
+    """
+    llm_task = asyncio.create_task(llm_fallback_reply(t, call_uuid))
+    done, _pending = await asyncio.wait({llm_task}, timeout=_FILLER_GRACE_SECONDS)
+    if llm_task in done:
+        return llm_task.result()
+    await _fire_llm_filler(call_uuid, t, session, voice)
+    return await llm_task
+
+
 async def _reprompt_or_llm_fallback(call_uuid: str, t: str, session, voice: str) -> None:
     """
     Shared by every "genuinely unmatched turn" branch across GREETING/
@@ -1328,9 +1386,8 @@ async def _reprompt_or_llm_fallback(call_uuid: str, t: str, session, voice: str)
     LLM fallback first, fall back to the static obj_repeat_generic_{voice}
     reprompt line on any failure.
     """
-    await _fire_llm_filler(call_uuid, t, session, voice)
-    reply = await llm_fallback_reply(t, call_uuid)
-    if reply and await play_dynamic_text(call_uuid, reply, session):
+    reply = await _llm_fallback_with_filler(call_uuid, t, session, voice)
+    if reply and await play_dynamic_text(call_uuid, reply, session, voice=voice):
         return
     # Reached if there was no reply, or play_dynamic_text() itself failed/
     # timed out -- never leave the call silent either way.
@@ -1869,16 +1926,28 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
             "ask_delivery":    f"{p}_q_valuation",
             "ask_price_range": f"{p}_q_price_range",
         }
+        # Collect EVERY matched question's answer key, not just the first --
+        # added 2026-08-13. The old "first match wins, return immediately"
+        # shape meant a customer asking two things in one turn ("showroom
+        # kahan hai aur price kya hai") only ever got the first one answered;
+        # the second was silently dropped, not deferred -- nothing re-asks a
+        # dropped question later, so it just never gets answered unless the
+        # customer repeats it. Deduped so ask_location+ask_timings (which
+        # share one answer key) don't play the same clip twice.
+        matched_plan_keys = []
         for intent_name, plan_key in qa_keys.items():
-            if intent_name in intents:
-                # Confirmed live 2026-08-13: two separate play_key() calls
-                # here let the second interrupt the first before a real
-                # customer heard it -- play_keys() sends both as one native
-                # Vobiz sequence instead. See _vobiz_play()'s docstring.
-                await play_keys(call_uuid, [plan_key, f"{p}_wa_cta"], session, log_transcript=[True, False])
-                session.react_state = "WHATSAPP_CTA"
-                await fire_whatsapp(session, call_uuid)
-                return True
+            if intent_name in intents and plan_key not in matched_plan_keys:
+                matched_plan_keys.append(plan_key)
+        if matched_plan_keys:
+            # Confirmed live 2026-08-13: two separate play_key() calls
+            # here let the second interrupt the first before a real
+            # customer heard it -- play_keys() sends both as one native
+            # Vobiz sequence instead. See _vobiz_play()'s docstring.
+            await play_keys(call_uuid, matched_plan_keys + [f"{p}_wa_cta"], session,
+                             log_transcript=[True] * len(matched_plan_keys) + [False])
+            session.react_state = "WHATSAPP_CTA"
+            await fire_whatsapp(session, call_uuid)
+            return True
         if "already_purchased" in intents:
             await play_key(call_uuid, f"{p}_already_purchased", session)
             return False
@@ -1968,19 +2037,27 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
             "ask_price_range": f"{p}_q_price_range",
             "ask_offer_scope": f"{p}_q_offer_scope",
         }
+        # Collect every matched question's answer key instead of stopping at
+        # the first -- see PRESENT_OFFER's identical fix above for the full
+        # reasoning (2026-08-13). interest_signals credited once per turn
+        # regardless of how many questions were asked, same as before.
+        matched_plan_keys = []
         for intent_name, plan_key in qa_keys.items():
-            if intent_name in intents:
-                session.interest_signals = getattr(session, "interest_signals", 0) + 1
-                # Confirmed live 2026-08-13: this exact combination (answer
-                # then appointment_ask as two separate play_key() calls) is
-                # what proved the interrupt bug in the first place -- a real
-                # customer's location question got no audible answer at all,
-                # cut off by appointment_ask arriving milliseconds later. See
-                # _vobiz_play()'s docstring.
-                await play_keys(call_uuid, [plan_key, f"{p}_appointment_ask"], session, log_transcript=[True, False])
-                session.react_state = "APPOINTMENT"
-                await fire_whatsapp(session, call_uuid)
-                return True
+            if intent_name in intents and plan_key not in matched_plan_keys:
+                matched_plan_keys.append(plan_key)
+        if matched_plan_keys:
+            session.interest_signals = getattr(session, "interest_signals", 0) + 1
+            # Confirmed live 2026-08-13: this exact combination (answer
+            # then appointment_ask as two separate play_key() calls) is
+            # what proved the interrupt bug in the first place -- a real
+            # customer's location question got no audible answer at all,
+            # cut off by appointment_ask arriving milliseconds later. See
+            # _vobiz_play()'s docstring.
+            await play_keys(call_uuid, matched_plan_keys + [f"{p}_appointment_ask"], session,
+                             log_transcript=[True] * len(matched_plan_keys) + [False])
+            session.react_state = "APPOINTMENT"
+            await fire_whatsapp(session, call_uuid)
+            return True
         if not intents and getattr(session, "ivr_fragment_count", 0) > 0:
             # Same IVR-loop-continuation suppression as GREETING — see that
             # branch's comment for the full explanation. Never truly silent
@@ -1997,9 +2074,9 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
             # fails, no score inflation, no jump to APPOINTMENT either way.
             # Filler ("hmm") deliberately skips this branch and falls through to
             # the Default below instead — see _is_filler_continuer's docstring.
-            await _fire_llm_filler(call_uuid, t, session, PREFIX_VOICE_MAP.get(p, "shreya"))
-            reply = await llm_fallback_reply(t, call_uuid)
-            if not (reply and await play_dynamic_text(call_uuid, reply, session)):
+            _voice = PREFIX_VOICE_MAP.get(p, "shreya")
+            reply = await _llm_fallback_with_filler(call_uuid, t, session, _voice)
+            if not (reply and await play_dynamic_text(call_uuid, reply, session, voice=_voice)):
                 await play_key(call_uuid, f"{p}_wa_cta", session)
             return True
         # Default: positive engagement → fire WA, move to APPOINTMENT, ask
@@ -2025,27 +2102,40 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
             "ask_price_range": f"{p}_q_price_range",
             "ask_offer_scope": f"{p}_q_offer_scope",
         }
+        # Collect every matched question's answer key instead of stopping at
+        # the first -- see PRESENT_OFFER's identical fix above for the full
+        # reasoning (2026-08-13). If ANY matched question is valuation/
+        # delivery, skip the trailing appointment_ask for the whole batch --
+        # q_valuation's own script text already ends by asking for a date,
+        # so appending appointment_ask after it would ask twice in one turn.
+        matched_plan_keys = []
+        skip_reask_append = False
         for intent_name, plan_key in qa_keys.items():
-            if intent_name in intents:
+            if intent_name in intents and plan_key not in matched_plan_keys:
+                matched_plan_keys.append(plan_key)
                 if intent_name in ("ask_valuation", "ask_delivery"):
-                    # q_valuation already ends by asking for a date — don't re-ask via appointment_ask
-                    await play_key(call_uuid, plan_key, session)
-                    return True
-                # Confirmed live 2026-08-13: appt_reask_tried is consumed once
-                # by any unclear reply and never reset, so a legitimate
-                # intervening question here (answered correctly) silently
-                # spent the caller's only "unclear reply" allowance -- the
-                # NEXT unclear reply, even turns later and unrelated to this
-                # one, then fell straight through to give-up-and-close
-                # instead of getting its own chance. This re-ask is a fresh
-                # question, so it earns a fresh reask budget. Also confirmed
-                # live the same day: answer+appointment_ask as two separate
-                # play_key() calls let the second interrupt the first before
-                # a real customer heard it -- play_keys() sends both as one
-                # native Vobiz sequence instead. See _vobiz_play()'s docstring.
-                session.appt_reask_tried = False
-                await play_keys(call_uuid, [plan_key, f"{p}_appointment_ask"], session, log_transcript=[True, False])
+                    skip_reask_append = True
+        if matched_plan_keys:
+            if skip_reask_append:
+                await play_keys(call_uuid, matched_plan_keys, session,
+                                 log_transcript=[True] * len(matched_plan_keys))
                 return True
+            # Confirmed live 2026-08-13: appt_reask_tried is consumed once
+            # by any unclear reply and never reset, so a legitimate
+            # intervening question here (answered correctly) silently
+            # spent the caller's only "unclear reply" allowance -- the
+            # NEXT unclear reply, even turns later and unrelated to this
+            # one, then fell straight through to give-up-and-close
+            # instead of getting its own chance. This re-ask is a fresh
+            # question, so it earns a fresh reask budget. Also confirmed
+            # live the same day: answer+appointment_ask as two separate
+            # play_key() calls let the second interrupt the first before
+            # a real customer heard it -- play_keys() sends both as one
+            # native Vobiz sequence instead. See _vobiz_play()'s docstring.
+            session.appt_reask_tried = False
+            await play_keys(call_uuid, matched_plan_keys + [f"{p}_appointment_ask"], session,
+                             log_transcript=[True] * len(matched_plan_keys) + [False])
+            return True
         if "not_interested" in intents or "busy" in intents:
             session.react_state = "CLOSE"
             await play_key(call_uuid, f"{p}_close", session)
@@ -2078,16 +2168,27 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
         # exact same reask it would've gotten instantly otherwise. A real
         # grounded answer still doesn't spend the reask budget when this
         # does run -- it was a real exchange, not confusion.
-        if not intents:
-            await _fire_llm_filler(call_uuid, t, session, PREFIX_VOICE_MAP.get(p, "shreya"))
-            _llm_answer = await llm_fallback_reply(t, call_uuid)
-            if _llm_answer and await play_dynamic_text(call_uuid, _llm_answer, session):
+        # Filler guard added 2026-08-13, matching GREETING/PRESENT_OFFER/
+        # WHATSAPP_CTA above -- this was the one state that sent bare filler
+        # ("हेलो" etc.) into the ungrounded LLM-answer path instead of
+        # treating it as a check-in. See _FILLER_CONTINUER_WORDS' docstring.
+        if not intents and not _is_filler_continuer(t):
+            _voice = PREFIX_VOICE_MAP.get(p, "shreya")
+            _llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _voice)
+            if _llm_answer and await play_dynamic_text(call_uuid, _llm_answer, session, voice=_voice):
                 await play_key(call_uuid, f"{p}_appointment_ask", session, log_transcript=False)
                 return True
-        # Unclear response — acknowledge + re-ask once with a different line
+        # Unclear response — acknowledge + re-ask once with a different line.
+        # log_transcript left at its default (True) as of 2026-08-13 -- this
+        # is a standalone reply with no preceding logged half in this turn
+        # (unlike the play_keys([True, False]) pairs elsewhere in this file),
+        # so suppressing it made the stored transcript look like the agent
+        # went silent. Confirmed live on the Pratham call: the customer's
+        # final "haan ji" has no assistant turn after it in call_summaries.
+        # full_transcript even though the agent did reply on the recording.
         if not getattr(session, "appt_reask_tried", False):
             session.appt_reask_tried = True
-            await play_key(call_uuid, f"{p}_appointment_reask", session, log_transcript=False)
+            await play_key(call_uuid, f"{p}_appointment_reask", session)
             return True
         # Confirmed live 2026-08-13: this used to reuse {p}_close ("Bilkul
         # sahi decision hai" -- that's absolutely the right decision), which

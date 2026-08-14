@@ -358,9 +358,15 @@ def _make_static_path(key: str, lang: str) -> Path:
     return STATIC_DIR / f"{key}_{lang}.wav"
 
 
-def _make_dynamic_path(text: str, lang: str) -> Path:
+def _make_dynamic_path(text: str, lang: str, speaker: Optional[str] = None) -> Path:
     normalized = re.sub(r"\s+", " ", text.lower().strip())
-    h = hashlib.md5(f"{lang}:{normalized}".encode()).hexdigest()[:12]
+    # speaker folded into the hash (only when explicitly passed) so the same
+    # text spoken by two different campaign voices doesn't collide on one
+    # cache entry -- added 2026-08-13 alongside speaker threading below.
+    # Omitted for the common no-speaker call so existing cached entries for
+    # already-seen text stay valid without a cache-wide invalidation.
+    key = f"{lang}:{normalized}" if not speaker else f"{lang}:{speaker}:{normalized}"
+    h = hashlib.md5(key.encode()).hexdigest()[:12]
     return DYNAMIC_DIR / f"dyn_{h}.wav"
 
 
@@ -381,42 +387,61 @@ def get_static_audio(key: str, lang: str) -> Optional[bytes]:
     return None
 
 
-def get_dynamic_audio(text: str, lang: str) -> Optional[bytes]:
-    path = _make_dynamic_path(text, lang)
+def get_dynamic_audio(text: str, lang: str, speaker: Optional[str] = None) -> Optional[bytes]:
+    path = _make_dynamic_path(text, lang, speaker)
     if path.exists():
         return path.read_bytes()
     return None
 
 
-def save_dynamic_audio(text: str, lang: str, wav: bytes) -> Path:
+def save_dynamic_audio(text: str, lang: str, wav: bytes, speaker: Optional[str] = None) -> Path:
     DYNAMIC_DIR.mkdir(parents=True, exist_ok=True)
-    path = _make_dynamic_path(text, lang)
+    path = _make_dynamic_path(text, lang, speaker)
     path.write_bytes(wav)
     return path
 
 
 # ── Sarvam API call ───────────────────────────────────────────────────────────
 
-async def _call_sarvam_tts(text: str, lang: str) -> Optional[bytes]:
+# Reused across calls instead of opening a fresh httpx.AsyncClient (and
+# paying a new TCP+TLS handshake) on every single TTS request -- added
+# 2026-08-13. Measured against the real Sarvam endpoint: a fresh client
+# per call vs. one pooled client showed a modest but real ~100-300ms
+# saving per call, on top of Sarvam's own synthesis time (which dominates
+# total latency -- measured 1.5-3.3s depending on text length -- and isn't
+# something a connection-pooling fix can touch). Same reused-client pattern
+# already established in webhook_reactivation.py's _get_http_client().
+_sarvam_http_client: httpx.AsyncClient | None = None
+
+
+async def _get_sarvam_http_client() -> httpx.AsyncClient:
+    global _sarvam_http_client
+    if _sarvam_http_client is None or _sarvam_http_client.is_closed:
+        _sarvam_http_client = httpx.AsyncClient(timeout=TTS_TIMEOUT)
+    return _sarvam_http_client
+
+
+async def _call_sarvam_tts(text: str, lang: str, speaker: Optional[str] = None) -> Optional[bytes]:
     """Raw Sarvam TTS API call. Returns WAV bytes or None."""
+    global _sarvam_http_client
     cfg = VOICE_CONFIG.get(lang, VOICE_CONFIG["hinglish"])
     try:
-        async with httpx.AsyncClient(timeout=TTS_TIMEOUT) as client:
-            r = await client.post(
-                "https://api.sarvam.ai/text-to-speech",
-                headers={
-                    "API-Subscription-Key": SARVAM_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "inputs": [text],
-                    "target_language_code": cfg["target_language_code"],
-                    "speaker": cfg["speaker"],
-                    "pace": TTS_PACE,
-                    "speech_sample_rate": TTS_SAMPLE_RATE,
-                    "model": TTS_MODEL,
-                },
-            )
+        client = await _get_sarvam_http_client()
+        r = await client.post(
+            "https://api.sarvam.ai/text-to-speech",
+            headers={
+                "API-Subscription-Key": SARVAM_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "inputs": [text],
+                "target_language_code": cfg["target_language_code"],
+                "speaker": speaker or cfg["speaker"],
+                "pace": TTS_PACE,
+                "speech_sample_rate": TTS_SAMPLE_RATE,
+                "model": TTS_MODEL,
+            },
+        )
         if r.status_code == 200:
             data = r.json()
             if data.get("audios"):
@@ -424,6 +449,12 @@ async def _call_sarvam_tts(text: str, lang: str) -> Optional[bytes]:
         logger.error(f"Sarvam TTS {r.status_code}: {r.text[:200]}")
     except Exception as e:
         logger.error(f"Sarvam TTS error: {e}")
+        # A connection-level failure is evidence the pooled connection is
+        # bad -- evict it so the next call opens a fresh one instead of
+        # retrying on the same broken socket. Same precedent as
+        # webhook_reactivation.py's _vobiz_play() client reset.
+        if isinstance(e, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
+            _sarvam_http_client = None
     return None
 
 
@@ -433,19 +464,30 @@ async def get_speech(
     text: str,
     lang: str,
     static_key: Optional[str] = None,
+    speaker: Optional[str] = None,
 ) -> tuple:
     """
     Main TTS function. Returns (wav_bytes, url, was_cached).
 
     Priority:
       1. Static cache (pre-generated FAQ/greeting) — instant
-      2. Dynamic cache (past response with same text+lang) — instant
+      2. Dynamic cache (past response with same text+lang+speaker) — instant
       3. Sarvam API — 3–6s, saves to dynamic cache
 
     Args:
       text:       The text to speak
       lang:       "hi", "en", or "hinglish"
       static_key: If provided, checks static cache first (e.g. "greeting_inbound")
+      speaker:    Sarvam speaker id ("ritu"/"shreya"/"simran") for live/dynamic
+                  generation only -- static cache is voice-agnostic per key
+                  (static_key already encodes the right voice, e.g.
+                  "obj_repeat_generic_ritu"). Defaults to VOICE_CONFIG's
+                  "shreya" when omitted -- added 2026-08-13. Before this,
+                  every dynamic/live-generated reply (the LLM-fallback path)
+                  was hardcoded to "shreya" regardless of which voice the
+                  rest of the call was using, causing an audible mid-call
+                  voice switch on every campaign except "rb". Confirmed live
+                  on the Pratham call (919911117660, campaign "ra"/"ritu").
     """
     # Layer 1: Static cache
     if static_key:
@@ -456,16 +498,16 @@ async def get_speech(
             return wav, url, True
 
     # Layer 2: Dynamic cache
-    wav = get_dynamic_audio(text, lang)
+    wav = get_dynamic_audio(text, lang, speaker)
     if wav:
-        url = _make_url(_make_dynamic_path(text, lang))
+        url = _make_url(_make_dynamic_path(text, lang, speaker))
         logger.info(f"DYNAMIC HIT [{lang}] → {text[:40]!r}")
         return wav, url, True
 
     # Layer 3: Fresh from Sarvam
-    wav = await _call_sarvam_tts(text, lang)
+    wav = await _call_sarvam_tts(text, lang, speaker)
     if wav:
-        path = save_dynamic_audio(text, lang, wav)
+        path = save_dynamic_audio(text, lang, wav, speaker)
         url = _make_url(path)
         logger.info(f"TTS GENERATED [{lang}] → {text[:40]!r}")
         return wav, url, False

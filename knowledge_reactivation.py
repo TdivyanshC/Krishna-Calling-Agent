@@ -1,5 +1,20 @@
 # knowledge_reactivation.py — Reactivation campaign script + intent map
 # Krishna Furniture | Place in: /home/voiceagent/voice-ai/
+#
+# DEPRECATED / DEAD CODE (confirmed 2026-08-13) -- no live call handler
+# imports this file. The live reactivation flow (webhook_reactivation.py,
+# what actually runs for ra/rb/rc/call2/call3) reads from
+# knowledge_react_abc.py instead. The only remaining reference anywhere in
+# the codebase is generate_cache_reactivation.py, an offline TTS
+# pre-generation script not wired into the running service (systemd unit
+# only execs webhook.py). This file's own "positive" intent list is missing
+# "yes"/"यस" and other fixes already applied to knowledge_react_abc.py --
+# left unfixed here deliberately, since fixing a file nothing reads from
+# would just be more effort spent on the same trap this comment exists to
+# prevent: someone editing this file expecting it to affect a live call.
+# Kept in the repo rather than deleted so nothing breaks if something
+# non-obvious still depends on it; verify with
+# `grep -rl knowledge_reactivation --include=*.py .` before removing.
 
 REACTIVATION_SCRIPT = {
 

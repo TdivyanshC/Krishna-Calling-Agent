@@ -10,6 +10,12 @@ Run ONCE before launching reactivation calls:
 
 Files land at: tts-cache/static/{key}_hi.wav  (e.g. react_greet_main_hi.wav)
 Already-cached files are skipped. Safe to re-run.
+
+DEPRECATED (2026-08-13): generates cache for knowledge_reactivation.py's
+REACTIVATION_SCRIPT, which no live call handler reads from anymore -- the
+live reactivation flow uses knowledge_react_abc.py + generate_react_abc_v2_
+cache.py instead. Running this script pre-generates audio nothing will ever
+play. Kept for now in case something non-obvious still depends on it.
 """
 
 import asyncio

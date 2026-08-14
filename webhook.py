@@ -213,6 +213,20 @@ SILENCE_THRESHOLD = 400
 MIN_SPEECH_FRAMES = 6    # 120ms minimum — filters out clicks and noise
 TRAILING_SILENCE  = 18   # 360ms — enough for natural mid-sentence pauses
 BARGE_IN_FRAMES   = 10  # raised from 4 — reduces false barge-in triggers from echo/noise on longer reactivation lines
+                        # Briefly raised to 15 on 2026-08-14 to fight a false barge-in that
+                        # cut off ra_offer_main_sale 2s in (likely echo, not real speech) --
+                        # REVERTED same session after the very next test call showed the
+                        # direct cost: while is_priya_speaking is True, speech only ever
+                        # counts toward barge_frames and is NEVER buffered anywhere else (see
+                        # "KNOWN GAP" below) -- raising the threshold makes a real but brief
+                        # interjection (customer said "yes"/"ji haan" here) MORE likely to
+                        # neither trigger a barge-in NOR reach STT, just vanish. Got direct
+                        # evidence of that exact failure (one turn, STT came back completely
+                        # empty) before ever confirming the false-barge-in fix even worked.
+                        # A single threshold can't fix both directions at once -- the real
+                        # fix is architectural (buffer audio during is_priya_speaking instead
+                        # of discarding it, and/or real echo cancellation), not a knob to
+                        # keep nudging on live test calls. Left at the original value.
 SAMPLE_RATE       = 8000
 REJECTION_GRACEFUL_DECLINE_THRESHOLD = 2  # rejection_signals count that forces a scripted, no-CTA exit
 
@@ -1164,33 +1178,53 @@ async def _fire_followup_wa(call_uuid: str, name: str, phone: str):
         logger.error(f"[{call_uuid}] Followup WA error: {e}")
 
 async def play_audio_url(call_uuid: str, audio_url: str, turn: int = 0, kind: str = "reply") -> bool:
+    """
+    Fixed 2026-08-13: this used to wrap the httpx call in asyncio.wait_for()
+    instead of using httpx's own native `timeout=` -- webhook_reactivation.py's
+    _vobiz_play() already documents why that's wrong (asyncio.wait_for cancels
+    the task from OUTSIDE httpx's transport, which can leave a stalled
+    connection looking healthy in the pooled client instead of being properly
+    torn down) but that fix was never ported here. Confirmed live 2026-08-13:
+    a real test call (919911117660... no, 8799712556) got complete silence
+    for its entire duration -- the PRE-STT filler this function serves was
+    the FIRST thing to time out, and this function's old except block caught
+    that as asyncio.TimeoutError, which is NOT one of the exception types
+    that reset _vobiz_http_client below -- so a single timeout here could
+    leave the shared, process-lifetime-pooled client silently poisoned for
+    every subsequent call this process ever handles, with no automatic
+    recovery until some other exception type happened to trigger a reset.
+    Now uses httpx's native per-request timeout (raises httpx.TimeoutException,
+    which DOES trigger a reset below) instead.
+    """
     _t0 = time.time()
     audit_event(call_uuid, "play_issue", turn=turn, audio_url=audio_url, kind=kind)
+    global _vobiz_http_client
     try:
         client = await _get_vobiz_client()
-        r = await asyncio.wait_for(
-            client.post(
-                f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/Play/",
-                headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK,
-                         "Content-Type": "application/json"},
-                json={"urls": [audio_url], "legs": "aleg", "mix": False}
-            ),
-            timeout=3.0
+        r = await client.post(
+            f"https://api.vobiz.ai/api/v1/Account/{VOBIZ_ACCOUNT}/Call/{call_uuid}/Play/",
+            headers={"X-Auth-ID": VOBIZ_AUTH_ID, "X-Auth-Token": VOBIZ_AUTH_TOK,
+                     "Content-Type": "application/json"},
+            json={"urls": [audio_url], "legs": "aleg", "mix": False},
+            timeout=3.0,
         )
         _elapsed = time.time() - _t0
         logger.info(f"[{call_uuid}] Play → {r.status_code} | {_elapsed:.2f}s | {audio_url}")
         audit_event(call_uuid, "play_result", turn=turn, status_code=r.status_code, elapsed_ms=round(_elapsed * 1000), kind=kind)
         return r.status_code in (200, 202)
-    except asyncio.TimeoutError:
+    except httpx.TimeoutException:
         _elapsed = time.time() - _t0
         logger.warning(f"[{call_uuid}] Play TIMEOUT after {_elapsed:.2f}s → {audio_url}")
         audit_event(call_uuid, "play_timeout", turn=turn, elapsed_ms=round(_elapsed * 1000), kind=kind, audio_url=audio_url)
+        # A real httpx-level timeout is itself evidence the connection is bad
+        # -- evict it so the next play opens a fresh one instead of risking
+        # reuse of a stalled connection. See this function's docstring.
+        _vobiz_http_client = None
         return True
     except Exception as e:
         logger.error(f"[{call_uuid}] play_audio_url error: {type(e).__name__}: {e}")
         _elapsed = time.time() - _t0
         audit_event(call_uuid, "play_result", turn=turn, status_code=None, elapsed_ms=round(_elapsed * 1000), kind=kind, error=type(e).__name__)
-        global _vobiz_http_client
         if isinstance(e, (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError)):
             logger.warning(f"[{call_uuid}] resetting vobiz client due to {type(e).__name__}")
             _vobiz_http_client = None

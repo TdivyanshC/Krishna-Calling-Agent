@@ -420,11 +420,36 @@ SHARED_SCRIPT = {
 }
 
 SHARED_INTENTS = {
+    # Added 2026-08-13 (second pass, same audit as the "positive" fix) --
+    # "पता"/"pata" is the single most natural Hindi word for "address" and
+    # had ZERO coverage here, only the English loanword "एड्रेस"/"address".
+    # Deliberately NOT added as a bare word -- "पता" alone collides with
+    # "मुझे पता नहीं"/"पता है" ("I don't know"/"I know"), an extremely
+    # common, totally unrelated phrase; same false-positive shape as the
+    # "यह" rejection documented in the positive-list fix above. Scoped to
+    # phrases that unambiguously ask FOR the address instead. Also added
+    # bare "address"/"location" (English, previously only "address batao"
+    # two-word form existed) and "nazdik"/"nearest"/"नज़दीक" (nearby
+    # showroom), covered in knowledge.py's fresh-lead flow for months but
+    # never ported here -- same pattern as the "yes" gap.
+    # "where is your showroom"/"where is your store" (+ Devanagari phonetic)
+    # added 2026-08-13 -- caught live, same session: a real test call asked
+    # this exact thing in English twice and matched nothing both times,
+    # falling through to the slower LLM fallback (which did answer
+    # correctly, but a direct match should be instant). Bare "where"
+    # deliberately NOT added -- far too generic, would match on almost any
+    # question.
     "ask_location": ["kahan hai", "showroom kahan", "location kya", "address batao",
                      "kaha hai showroom", "kahan par hai", "kaunsi jagah",
+                     "pata batao", "pata kya hai", "aapka pata", "store ka pata",
+                     "address", "location", "nazdik", "nearest",
+                     "where is your showroom", "where is your store", "where are you located",
                      "कहां है", "कहाँ है", "शोरूम कहां", "लोकेशन क्या", "एड्रेस बताओ",
                      "कहां पर है", "कहाँ पर है", "स्टोर कहां", "स्टोर कहाँ", "कौनसी जगह",
-                     "दुकान कहां", "shop kahan", "store kahan", "showroom kaha"],
+                     "दुकान कहां", "shop kahan", "store kahan", "showroom kaha",
+                     "पता बताओ", "पता क्या है", "आपका पता", "स्टोर का पता",
+                     "वेयर इज योर शोरूम", "वेयर इज योर स्टोर",
+                     "एड्रेस", "लोकेशन", "नज़दीक", "नज़दीकी"],
     # English-phonetic Devanagari forms added 2026-08-13 -- confirmed live,
     # multiple real customers this week asked for the agent's name in
     # English ("I'd like to know your name", "could you share your name
@@ -436,13 +461,26 @@ SHARED_INTENTS = {
                 "your name", "share your name", "give me your name", "know your name",
                 "तुम्हारा नाम", "आपका नाम", "नाम क्या है", "कौन बोल रहे हो", "कौन बोल रही हो",
                 "योर नेम", "शेयर योर नेम", "गिव मी योर नेम", "नो योर नेम"],
+    # "band hota"/"बंद होता" (closing time) added 2026-08-13 -- this only
+    # covered "khulta"/opening time before; a customer asking when the store
+    # CLOSES matched nothing. Plain English added same day (second pass,
+    # customer explicitly asked to check English coverage across every
+    # category) -- this list had ZERO English before, Hinglish/Devanagari
+    # only.
     "ask_timings": ["time kya", "kab khulta", "timing kya hai", "kitne baje khulta",
-                    "टाइम क्या", "कब खुलता", "टाइमिंग क्या है", "कितने बजे खुलता"],
+                    "band hota", "band hoti", "kab tak khula",
+                    "what time", "when do you open", "when do you close",
+                    "opening hours", "closing time", "working hours", "office hours",
+                    "टाइम क्या", "कब खुलता", "टाइमिंग क्या है", "कितने बजे खुलता",
+                    "बंद होता", "बंद होती", "कब तक खुला"],
     "ask_valuation": ["valuation kaise", "purana furniture kaise", "kaise pickup",
                       "value kaise milegi", "kaise calculate", "kaise lenge purana",
+                      "how much will i get", "buyback value", "trade in value", "resale value",
                       "वैल्यूएशन कैसे", "पुराना फर्नीचर कैसे", "कैसे पिकअप", "वैल्यू कैसे मिलेगी",
                       "कैसे कैलकुलेट", "कैसे लेंगे पुराना"],
     "ask_delivery": ["delivery kab", "kab milega", "kitne din mein", "delivery kaise",
+                     "when will it arrive", "delivery time", "how many days for delivery",
+                     "how long for delivery",
                      "डिलीवरी कब", "कब मिलेगा", "कितने दिन में", "डिलीवरी कैसे"],
     "appointment_confirm": ["kal", "parso", "monday", "tuesday", "wednesday", "thursday",
                             "friday", "saturday", "sunday", "subah", "shaam", "raat",
@@ -474,10 +512,27 @@ REACT_ABC_INTENTS = {
     # or the negated form was covered, not these. Bare "समझा" deliberately
     # NOT added — it's a substring of "समझा नहीं" (repeat/negation), so
     # adding it risks false-matching a "didn't understand" reply as positive.
-    "positive": ["haan", "han", "haa", "theek hai", "batao", "bolo", "sun raha hoon",
+    # "yes"/"यस" (plain English affirmation, both Latin and its Devanagari
+    # phonetic STT rendering) -- confirmed live 2026-08-13 (Pratham call
+    # 919911117660): the customer said "यस" then "यस यस" as his first two
+    # replies and got the "sorry, didn't catch that" reprompt both times,
+    # only succeeding on his third attempt once he switched to "haan ji".
+    # This exact gap was already closed in knowledge.py's ACK_WORDS for the
+    # fresh-lead flow months ago -- it just never made it into this file's
+    # list. Same reasoning extended to "yeah"/"yep"/"ha" (bare, casual
+    # Hinglish "yeah") and "sahi hai"/"सही है"/"correct", which are
+    # equally common affirmations never covered here. Bare "right" REMOVED
+    # 2026-08-13 (caught in this same pass's own verification testing) --
+    # collides with "right now"/"right there"/"not right now" etc, which
+    # have nothing to do with affirmation; "i am busy right now" was
+    # matching both "busy" AND "positive" off "right" alone. Same
+    # false-positive shape already documented for "यह"/bare "पता" above.
+    "positive": ["haan", "han", "haa", "ha", "theek hai", "batao", "bolo", "sun raha hoon",
                  "okay", "ok", "sure", "bilkul", "achha", "bataiye", "sunenge", "ji",
+                 "yes", "yeah", "yep", "yup", "correct", "sahi hai",
                  "जी", "हाँ", "हां", "ठीक है", "बताओ", "बोलो", "अच्छा", "बिल्कुल",
-                 "बताइए", "समझ गया", "समझ गई", "समझा ही है", "samajh gaya", "samajh gayi"],
+                 "बताइए", "समझ गया", "समझ गई", "समझा ही है", "samajh gaya", "samajh gayi",
+                 "यस", "येस", "सही है"],
     # Narrowed 2026-08-13 -- bare "kaun"/"कौन" (who) collided with "कौन से"
     # (which), a completely unrelated interrogative. Confirmed live: "कौन से
     # फर्नीचर पे ऑफर है?" (which furniture is the offer on?) matched this and
@@ -503,22 +558,41 @@ REACT_ABC_INTENTS = {
     # keyword. Narrowed to actual "say that again" phrases only, kept symmetric
     # across Hinglish/Devanagari (the old list had asymmetric coverage -- e.g.
     # "dobara bolo" existed only in Hinglish, "suna nahi" only in Hinglish).
+    # English added 2026-08-13 (second pass, English-coverage sweep) --
+    # "come again"/"pardon" are unambiguous repeat-requests in English with
+    # no collision risk in this domain, same reasoning as the Hindi/Hinglish
+    # phrases already here.
     "repeat": ["kya bola", "phir se bolo", "samjha nahi", "dobara bolo", "suna nahi",
-               "repeat karo", "फिर से बोलो", "क्या बोला", "समझा नहीं", "दोबारा बोलो",
+               "repeat karo", "say that again", "come again", "what did you say",
+               "please repeat", "pardon",
+               "फिर से बोलो", "क्या बोला", "समझा नहीं", "दोबारा बोलो",
                "सुना नहीं", "रिपीट करो"],
     "privacy_concern": ["number kaise mila", "data kahan se", "mera number kyun hai", "spam", "privacy",
+                       "how did you get my number", "who gave you my number",
                        "नंबर कैसे मिला", "डेटा कहां से", "मेरा नंबर क्यों है", "स्पैम", "प्राइवेसी"],
     "offer_clarify": ["kya offer", "kaise hoga", "explain karo", "samjhao",
                       "exchange kaise", "purana furniture", "kya matlab",
                       "detail batao", "aur batao", "एक्सचेंज कैसे", "exchange kaisa",
+                      "explain", "tell me more", "more details", "more information",
+                      "what's the offer", "what is the offer",
                       "क्या ऑफर", "कैसे होगा", "एक्सप्लेन करो", "समझाओ",
                       "पुराना फर्नीचर", "क्या मतलब", "डिटेल बताओ", "और बताओ", "एक्सचेंज कैसा"],
+    # "भरोसा नहीं"/"bharosa nahi" and "यकीन नहीं"/"yakeen nahi" added
+    # 2026-08-13 -- both are more common, everyday Hindi words for
+    # "trust"/"belief" than "vishwas" (which is more formal/literary), and
+    # neither had any coverage. "trust nahi"/"don't trust" (English) added
+    # requiring the negation, not bare "trust" alone -- "I trust you" bare
+    # would be the opposite signal.
     "trust_issue": ["fake hai", "jhooth", "fraud", "scam", "sach mein",
                     "pakka", "sach hai kya", "vishwas nahi",
+                    "bharosa nahi", "yakeen nahi", "trust nahi", "don't trust",
+                    "is this real", "is this genuine", "sounds fake", "is this legit",
                     "फेक है", "झूठ", "फ्रॉड", "स्कैम", "सच में",
-                    "पक्का", "सच है क्या", "विश्वास नहीं"],
+                    "पक्का", "सच है क्या", "विश्वास नहीं",
+                    "भरोसा नहीं", "यकीन नहीं"],
     "buying_signal": ["kitna time hai", "kab tak hai", "interested hoon",
                       "showroom kab", "aana chahta", "visit karna", "kab aaye",
+                      "i am interested", "when can i visit", "how much time do i have",
                       "कितना टाइम है", "कब तक है", "इंटरेस्टेड हूं",
                       "शोरूम कब", "आना चाहता", "विजिट करना", "कब आएं"],
     # Narrowed 2026-08-13 -- this used to share bare affirmation words
@@ -540,6 +614,7 @@ REACT_ABC_INTENTS = {
     # +40, which is the right confidence level for an unverifiable bare yes.
     "wa_ok": ["bhejo", "send karo", "bhej do", "kar do", "theek hai bhej do",
               "ok send", "haan bhejo", "de do", "kar lo",
+              "please send", "yes send it", "send it",
               # "सेंड कीजिए" -- polite/formal conjugation of "send karo" above.
               # Confirmed live 2026-08-13: "pehle mujhe detail send kijiye"
               # matched nothing, despite being an explicit, unambiguous
@@ -550,9 +625,19 @@ REACT_ABC_INTENTS = {
     "wa_diff_number": ["alag number", "doosra number", "different number",
                       "अलग नंबर", "दूसरा नंबर", "डिफरेंट नंबर"],
     "wa_prefers": ["whatsapp pe hi", "call nahi", "message karo",
+                  "message me instead", "text me instead", "whatsapp only", "just whatsapp",
                   "व्हाट्सएप पे ही", "कॉल नहीं", "मैसेज करो"],
-    "busy": ["busy hoon", "abhi nahi", "kaam mein hoon", "baad mein", "driving",
+    # "busy hu"/"busy hun" spelling variants added 2026-08-13 -- token-
+    # boundary matching means "busy hu" doesn't match the keyword "busy
+    # hoon" (different final token), and "hu"/"hun" are extremely common
+    # casual-Hinglish spellings of "hoon" in STT output.
+    # "not now" added same day (English pass) -- deliberately NOT added to
+    # not_interested (see that list's comment) because it's a deferral, not
+    # a decline; this is exactly where it belongs.
+    "busy": ["busy hoon", "busy hu", "busy hun", "abhi nahi", "kaam mein hoon", "baad mein", "driving",
              "meeting mein", "abhi nahi kar sakta",
+             "i am busy", "i'm busy", "not now", "can't talk", "cant talk",
+             "in a meeting", "call me later", "call later",
              "बिज़ी हूं", "अभी नहीं", "काम में हूं", "बाद में", "ड्राइविंग",
              "मीटिंग में", "अभी नहीं कर सकता"],
     "not_interested": ["interested nahi", "nahi chahiye", "rehne do",
@@ -618,17 +703,23 @@ REACT_ABC_INTENTS = {
                        # "don't want to know". Both confirmed live 2026-08-13,
                        # real customer utterances that matched nothing.
                        "aavashyakta nahi", "आवश्यकता नहीं", "nahi jaanna", "नहीं जानना"],
+    # Bare "expensive" added 2026-08-13 -- ironically absent from the intent
+    # named after it; only its synonym "costly" was covered.
     "expensive": ["mahenga hai", "mahenge hain", "mahenga", "mahenge", "bahut zyada",
-                 "budget nahi", "afford nahi", "costly", "rate zyada",
+                 "budget nahi", "afford nahi", "costly", "rate zyada", "expensive",
+                 "can't afford it", "cant afford it", "out of budget", "too costly",
                  "महंगा है", "महंगे हैं", "महंगा", "महंगे", "बहुत ज़्यादा", "बहुत रेट",
-                 "रेट ज़्यादा", "बजट नहीं", "अफोर्ड नहीं", "कॉस्टली"],
+                 "रेट ज़्यादा", "बजट नहीं", "अफोर्ड नहीं", "कॉस्टली", "एक्सपेंसिव"],
     "online_cheaper": ["online sasta", "amazon pe", "flipkart pe", "online better",
+                      "cheaper online", "better deals online", "found it cheaper",
                       "ऑनलाइन सस्ता", "अमेज़न पे", "फ्लिपकार्ट पे", "ऑनलाइन बेटर"],
     "sochna_hai": ["sochna hai", "soch ke batata hoon", "wife se puchna",
                    "family se puchna", "decide nahi kiya",
+                   "let me think", "need to think", "will think about it", "thinking about it",
                    "सोचना है", "सोच के बताता हूं", "वाइफ से पूछना",
                    "फैमिली से पूछना", "डिसाइड नहीं किया"],
     "escalate": ["manager se baat", "senior se milao", "complaint karna",
+                "manager", "supervisor", "speak to someone else", "complaint",
                 "मैनेजर से बात", "सीनियर से मिलाओ", "कंप्लेंट करना"],
     "dnc": ["dobara call mat karna", "number delete karo", "DNC", "harassment",
             "complaint karunga", "call mat karo kabhi", "band karo yeh call",
@@ -681,16 +772,32 @@ REACT_ABC_INTENTS = {
             "दोबारा मत करना", "फिर से मत करना", "आगे से मत करना"],
     "personal_question": ["tumhara naam", "kaun ho tum", "real hai ya bot",
                           "robot ho", "AI ho", "human ho",
+                          "are you a bot", "are you real", "are you human", "is this a bot",
                           "तुम्हारा नाम", "कौन हो तुम", "रियल है या बॉट",
                           "रोबोट हो", "एआई हो", "ह्यूमन हो"],
     # Three added 2026-08-13 -- all confirmed live this week as real customer
     # questions that matched nothing at all anywhere in this file.
+    # "दाम"/"daam" (the native Hindi word for price/rate) and "kitne ka
+    # hai"/"कितने का है" ("how much is it" -- one of the single most common
+    # everyday ways to ask a price, in any language) added 2026-08-13 --
+    # neither had any coverage; this list only had English loanwords
+    # (price/rate) and one Hinglish phrase (kitna paisa). Bare "price"
+    # (English) added too; bare "cost" deliberately NOT added -- it
+    # collides with "no cost emi", a payment-method phrase, not a price
+    # question.
     "ask_price_range": ["starting range", "starting price", "price kya hai",
                         "rate kya hai", "kitne se shuru", "shuru kitne se",
-                        "kitna paisa", "स्टार्टिंग रेंज", "प्राइस क्या है",
-                        "रेट क्या है", "कितने से शुरू", "शुरू कितने से", "कितना पैसा"],
+                        "kitna paisa", "daam kya hai", "kitne ka hai", "kitne ki hai",
+                        "kitni ka hai", "price",
+                        "how much is it", "how much does it cost", "what's the price",
+                        "what is the price",
+                        "स्टार्टिंग रेंज", "प्राइस क्या है",
+                        "रेट क्या है", "कितने से शुरू", "शुरू कितने से", "कितना पैसा",
+                        "दाम क्या है", "कितने का है", "कितने की है", "कितनी का है", "प्राइस"],
     "ask_offer_scope": ["kis kis cheez pe", "sab furniture pe", "sari furniture pe",
                         "kaunse product", "sabhi furniture", "kaun se furniture",
+                        "which products", "what all is included", "what items",
+                        "which items", "what all do you have",
                         "किस-किस चीज पे", "सब फर्नीचर पे", "सारी फर्नीचर पे",
                         "कौनसे प्रोडक्ट", "सभी फर्नीचर पर", "सारी फर्नीचर पर",
                         # "कौन से फर्नीचर पे ऑफर है" -- the exact real utterance
@@ -701,6 +808,8 @@ REACT_ABC_INTENTS = {
                         "कौन से फर्नीचर", "कौन सा फर्नीचर"],
     "already_purchased": ["abhi liya hai", "already le liya", "naya furniture liya hai",
                           "abhi kharida", "already kharid liya", "abhi le chuke",
+                          "i already bought", "i already have one", "already purchased",
+                          "already own one", "already bought it",
                           "अभी लिया है", "पहले ही ले लिया", "नया फर्नीचर लिया है",
                           "अभी खरीदा", "पहले से ले चुके", "अभी ले चुके"],
 }
