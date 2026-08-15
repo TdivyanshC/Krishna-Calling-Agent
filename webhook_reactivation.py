@@ -60,10 +60,18 @@ _IVR_FRAGMENT_PATTERNS = [
     # available on?" got silently treated as a voicemail fragment on both
     # turns, suppressing all replies to genuine, substantive questions for
     # the rest of that call (ivr_fragment_count never resets down once set).
-    # Verified removing it still catches the real IVR message this list was
-    # built for -- "मैसेज"/"लीव" match the very next turn of the same
-    # greeting regardless.
-    "मैसेज", "लीव",
+    # Bare "मैसेज" (message) narrowed the SAME way on 2026-08-14 -- the exact
+    # same false-positive shape the "available" fix above already
+    # documented, just missed at the time: "मैसेज" alone matched a real
+    # customer saying "WhatsApp pe hi message karo" (please just message me
+    # on WhatsApp -- itself one of this file's own wa_prefers/wa_ok keywords)
+    # and silently withheld the reply for an entirely legitimate turn.
+    # Narrowed to the actual carrier phrase this list was built to catch --
+    # confirmed against the real captured fragments in
+    # test_ivr_fragment_detection.py ("इफ यू वुड लाइक टू लीव एन एडिशनल
+    # मैसेज...") -- requiring "लीव"+"मैसेज" adjacency instead of either word
+    # alone still catches the real greeting.
+    "लीव एन एडिशनल मैसेज", "लीव एन मैसेज", "लीव मैसेज",
     # "Your call has been put on hold, please stay on the line."
     "होल्ड पर", "स्टे ऑन द लाइन", "पुट योर कॉल",
     # "... please leave a message after the tone." — confirmed live
@@ -738,6 +746,41 @@ async def route_objection(
         # DECISION_DATE are both intentionally left to their own documented
         # vague-reask-then-close fallthrough (see comments at those sites) --
         # not gaps to fix, deliberate design choices.
+
+    # 7. escalate (manager request) -- added 2026-08-14, closing a real gap:
+    #    detected correctly by detect_intents() for months, never checked by
+    #    any state's routing. No live manager transfer exists in this
+    #    system, so the reply says so honestly instead of implying one.
+    #    Not terminal -- acknowledges and the call continues. Deferred to a
+    #    hard decline like every other category above.
+    if "escalate" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_escalate_generic_{voice}", session)
+        return True
+
+    # 8. personal_question ("are you a bot/human/AI") -- added 2026-08-14,
+    #    same gap shape as escalate: detected, never routed. Answered
+    #    honestly (it is an AI) rather than dodged, then continues.
+    if "personal_question" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_personal_question_generic_{voice}", session)
+        return True
+
+    # 9/10. wa_ok / wa_prefers -- added 2026-08-14. Both already feed lead
+    #    scoring in supabase_calling.py (interest_signals, customer_response)
+    #    but neither ever produced a spoken acknowledgment -- a customer
+    #    explicitly saying "haan bhejo" or "WhatsApp pe hi baat karo" got
+    #    silently absorbed into scoring with nothing said back. Light-touch
+    #    only: acknowledge, don't change state, don't touch the scoring
+    #    logic these already feed.
+    if "wa_ok" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_wa_ok_generic_{voice}", session)
+        return True
+    if "wa_prefers" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_wa_prefers_generic_{voice}", session)
+        return True
 
     return None
 

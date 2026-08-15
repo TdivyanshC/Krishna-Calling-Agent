@@ -386,6 +386,23 @@ SHARED_SCRIPT = {
     "obj_timing_greet_generic_ritu": "Bilkul samajh sakti hoon ji, koi jaldi nahi hai. Bas do minute mein bata deti hoon, phir aap soch lijiyega.",
     "obj_timing_greet_generic_shreya": "Bilkul samajh sakti hoon ji, koi jaldi nahi hai. Bas do minute mein bata deti hoon, phir aap soch lijiyega.",
     "obj_timing_greet_generic_simran": "Bilkul samajh sakti hoon ji, koi jaldi nahi hai. Bas do minute mein bata deti hoon, phir aap soch lijiyega.",
+    # Four added 2026-08-14 -- "escalate"/"wa_ok"/"wa_prefers"/"personal_question"
+    # were all being correctly detected by detect_intents() and then silently
+    # dropped -- confirmed live, zero routing checks anywhere in the file for
+    # any of the four. Same cross-flow-generic pattern as obj_repeat_generic/
+    # obj_timing_greet_generic above (one text, three voice-suffixed keys).
+    "obj_escalate_generic_ritu": "Abhi call par manager available nahi hain, lekin main aapki poori madad kar sakti hoon, ya showroom mein hamari team se seedha baat kar sakte hain.",
+    "obj_escalate_generic_shreya": "Abhi call par manager available nahi hain, lekin main aapki poori madad kar sakti hoon, ya showroom mein hamari team se seedha baat kar sakte hain.",
+    "obj_escalate_generic_simran": "Abhi call par manager available nahi hain, lekin main aapki poori madad kar sakti hoon, ya showroom mein hamari team se seedha baat kar sakte hain.",
+    "obj_personal_question_generic_ritu": "Main Krishna Furniture ki AI assistant hoon, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
+    "obj_personal_question_generic_shreya": "Main Krishna Furniture ki AI assistant hoon, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
+    "obj_personal_question_generic_simran": "Main Krishna Furniture ki AI assistant hoon, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
+    "obj_wa_ok_generic_ritu": "Bilkul, abhi bhej rahi hoon WhatsApp par.",
+    "obj_wa_ok_generic_shreya": "Bilkul, abhi bhej rahi hoon WhatsApp par.",
+    "obj_wa_ok_generic_simran": "Bilkul, abhi bhej rahi hoon WhatsApp par.",
+    "obj_wa_prefers_generic_ritu": "Bilkul samajh sakti hoon, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
+    "obj_wa_prefers_generic_shreya": "Bilkul samajh sakti hoon, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
+    "obj_wa_prefers_generic_simran": "Bilkul samajh sakti hoon, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
     # Added 2026-08-13 -- business decision: no turn should ever produce zero
     # reply. Previously, once a call was flagged as a likely IVR/hold loop
     # (ivr_fragment_count > 0), every further unmatched turn stayed silent
