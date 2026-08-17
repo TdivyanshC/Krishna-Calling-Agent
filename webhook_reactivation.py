@@ -12,7 +12,6 @@ import re
 import time
 import wave
 from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
 
 import httpx
 from groq import AsyncGroq
@@ -249,17 +248,14 @@ async def _vobiz_play(call_uuid: str, audio_url, turn: int = 0, kind: str = "rep
     asyncio.create_task(_fire())
     return True
 
-IST = ZoneInfo("Asia/Kolkata")
-# Independence Day flash sale: flat 50% off, 2026-08-11 through 2026-08-16
-# IST. play_key() swaps to each key's "_sale" variant (knowledge_react_abc.py)
-# while this is true, leaving the original exchange-offer keys and their
-# cached audio untouched — the Aug 17 revert is just this window closing,
-# no code change or re-cache pass needed.
-_SALE_END = datetime(2026, 8, 16, 23, 59, 59, tzinfo=IST)
-
-
-def _sale_active() -> bool:
-    return datetime.now(IST) <= _SALE_END
+# Independence Day flash sale (flat 50% off, 2026-08-11 through 2026-08-16
+# IST) ended and its script/keyword content was removed 2026-08-17 --
+# offer's gone, back to the exchange offer as the only live pitch for now.
+# _sale_active()/_SALE_END and the "_sale" key-swap in _resolve_key_url()
+# below are gone with it -- they're not just dormant, the "_sale"-suffixed
+# keys themselves no longer exist in knowledge_react_abc.py's script dicts.
+# If a future flash sale needs the same pattern again, re-add a dated
+# window check here rather than reviving this specific removed code.
 
 
 async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcript: bool = True) -> str | None:
@@ -287,11 +283,6 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
     # copy is currently live.
     if session is not None and (key.endswith("_offer_main") or key.endswith("_offer_explain")):
         session.offer_explained = True
-
-    if _sale_active():
-        _sale_key = f"{key}_sale"
-        if script.get(_sale_key) is not None:
-            key = _sale_key
 
     if session is not None and log_transcript:
         if not hasattr(session, "conversation"):
@@ -383,12 +374,9 @@ async def fire_whatsapp(session, call_uuid: str) -> bool:
     phone    = getattr(session, "customer_phone", "").replace("+", "").strip()
     name     = getattr(session, "customer_name", "") or "Customer"
     campaign = getattr(session, "campaign", "react_a")
-    # Global switch, not sale-window-gated like play_key()'s key swap --
-    # fire_whatsapp() is idempotent per lead (wa_sent guard above), so an
-    # in-flight lead who already got their WhatsApp keeps that message;
-    # this only affects sends that haven't happened yet, which from
-    # 2026-08-11 onward are overwhelmingly new leads pitched the sale.
-    _offer_label = "Independence Day Sale — Flat 50% off till 16th August" if _sale_active() else "25+25% exchange offer"
+    # Independence Day sale removed 2026-08-17 -- back to the exchange offer
+    # unconditionally (see the comment above _resolve_key_url()).
+    _offer_label = "25+25% exchange offer"
     payload  = {"phone": phone, "name": name, "offer": _offer_label, "campaign": "reactivation"}
     ok = False
     try:

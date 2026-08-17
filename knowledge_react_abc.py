@@ -73,29 +73,6 @@ REACT_A_SCRIPT = {
     "ra_filler_1": "Haan ji...", "ra_filler_2": "Ji haan...", "ra_filler_3": "Bilkul ji...",
     "ra_filler_4": "Achha ji...", "ra_filler_5": "Samajh gayi ji...", "ra_filler_6": "Theek hai ji...",
 
-    # Independence Day sale (2026-08-11 to 2026-08-16 IST) — flat 50% off,
-    # replacing the exchange-offer pitch above for the duration of the sale.
-    # Added as separate "_sale" keys rather than editing the originals in
-    # place: play_key() (webhook_reactivation.py) transparently swaps to
-    # these while _sale_active() is true, so the exchange copy and its
-    # cached audio are untouched and the Aug 17 revert needs no code change
-    # or re-cache pass — the window just closes. "No hidden condition" is
-    # deliberately NOT claimed here (unlike ra_offer_explain above) — not
-    # confirmed as true for this sale.
-    "ra_greet_main_sale": "Independence Day ke mauke par Krishna Furniture mein is waqt bahut bada offer chal raha hai ji — flat 50% off, sirf 16 August tak. Ghar ka furniture upgrade karna hai toh isse achha time nahi. 30 second mein samjha doon?",
-    "ra_greet_repeat_sale": "Haan ji — abhi Independence Day sale chal rahi hai, flat 50% off, sirf 16 August tak. Matlab ghar ka poora look badal jaata hai, aadhe daam mein.",
-    "ra_offer_main_sale": "Krishna Furniture mein abhi har furniture par flat 50% off hai ji, lekin sirf 16 August tak. Ek aur achhi baat bataun?",
-    "ra_offer_explain_sale": "Bilkul simple hai ji — jo furniture pasand aaye, uske price par seedha 50% off. Bas 16 August tak, uske baad yeh rate wapas nahi milega. Koi shart nahi.",
-    "ra_offer_urgency_sale": "Bas itna ki pieces limited hain aur offer sirf 16 August tak hai ji — isiliye keh rahi hoon, dekh lijiye toh behtar rahega. Baaki poori tarah aapki marzi.",
-    "ra_obj_not_interested_sale": "Ek baar WhatsApp par bas photos aur sale price dekh lijiyega ji — koi pressure nahi. Pasand aaye toh baat aage badhaate hain.",
-    "ra_obj_busy_sale": "Bilkul samajhti hoon ji, aap busy hain — main sirf details WhatsApp par bhej deti hoon. Bas offer sirf 16 August tak hai, isliye jaldi dekh lijiyega.",
-    "ra_obj_expensive_sale": "Samajhti hoon ji, par abhi toh flat 50% off hai — seedha aadha price. 16 August ke baad yeh rate nahi milega. Exact price WhatsApp par bhej deti hoon, ek baar dekh lijiye.",
-    "ra_obj_online_sale": "Sahi kaha ji. Bas online par delivery, installation, after-sales sab alag se lagta hai. Yahan seedha 50% off milta hai showroom price par. Poora comparison WhatsApp par bhej deti hoon.",
-    "ra_obj_think_sale": "Zaroor soch lijiye ji, yeh toh sahi baat hai. Main details WhatsApp par bhej ke rakhti hoon — jab bhi decide karein, saamne rahengi. Bas offer 16 August tak hai, itna dhyaan rahe.",
-    "ra_obj_recovery_sale": "Sach batau ji — jo families yeh offer le kar gayi hain, bahut khush hain. Aadhe daam mein ghar ka look hi badal jaata hai. Aap bhi ek baar aa kar dekhiye, achha lagega.",
-    "ra_wa_cta_sale": "Main saari details abhi WhatsApp par bhej deti hoon ji — photos, 50% off wali prices, sab. Aap aaram se dekh lijiyega, decision baad mein bhi le sakte hain.",
-    "ra_close_sale": "Bahut achha ji! Main abhi WhatsApp par photos aur prices bhej deti hoon. Aur ek baar showroom aa jaiye — 16 August se pehle. Milte hain! Shukriya.",
-    "ra_close_conviction_sale": "Bas itna keh rahi hoon, pieces limited hain aur offer sirf 16 August tak hai ji — showroom mein aaiye, seedha 50% off le jaaiye. Bahut shukriya!",
 }
 
 REACT_B_SCRIPT = {
@@ -142,24 +119,6 @@ REACT_B_SCRIPT = {
     "rb_filler_1": "Haan ji...", "rb_filler_2": "Ji haan...", "rb_filler_3": "Bilkul ji...",
     "rb_filler_4": "Achha ji...", "rb_filler_5": "Samajh gayi ji...", "rb_filler_6": "Theek hai ji...",
 
-    # Independence Day sale -- see the matching comment block in
-    # REACT_A_SCRIPT above for the mechanism (play_key()'s _sale_active()
-    # swap) and why "no hidden condition" is deliberately not claimed.
-    "rb_greet_main_sale": "Independence Day ke mauke par Krishna Furniture mein bahut bada sale chal raha hai ji — flat 50% off, sirf 16 August tak. Socha aapko bhi zaroor bata doon. Sunenge?",
-    "rb_greet_repeat_sale": "Haan ji — abhi Independence Day sale chal rahi hai, flat 50% off, sirf 16 August tak. Offer bata doon?",
-    "rb_offer_main_sale": "Abhi har furniture par flat 50% off hai ji, sirf 16 August tak — isiliye kaafi log soch se kam budget mein naya furniture le pa rahe hain. Ek aur baat bataun?",
-    "rb_offer_explain_sale": "Bilkul simple hai ji — jo furniture pasand aaye, uske price par seedha 50% off. Bas 16 August tak, uske baad yeh rate wapas nahi milega. Koi shart nahi.",
-    "rb_offer_urgency_sale": "Is hafte kaafi families aa rahi hain ji, aur pieces limited hain — isiliye keh rahi hoon, thoda jaldi dekh lijiyega. Baaki aapki marzi.",
-    "rb_obj_not_interested_sale": "Ek baar WhatsApp par bas photos aur sale price dekh lijiyega ji — koi pressure nahi. Pasand aaye toh baat aage badhaate hain.",
-    "rb_obj_busy_sale": "Bilkul samajhti hoon ji, aap busy hain — main sirf details WhatsApp par bhej deti hoon. Bas offer sirf 16 August tak hai, isliye jaldi dekh lijiyega.",
-    "rb_obj_expensive_sale": "Samajhti hoon ji, par abhi toh flat 50% off hai — seedha aadha price. 16 August ke baad yeh rate nahi milega. Exact price WhatsApp par bhej deti hoon, ek baar dekh lijiye.",
-    "rb_obj_online_sale": "Sahi kaha ji. Bas online par delivery, installation, after-sales sab alag se lagta hai. Yahan seedha 50% off milta hai showroom price par. Poora comparison WhatsApp par bhej deti hoon.",
-    "rb_obj_think_sale": "Zaroor soch lijiye ji, yeh toh sahi baat hai. Main details WhatsApp par bhej ke rakhti hoon — jab bhi decide karein, saamne rahengi. Bas offer 16 August tak hai, itna dhyaan rahe.",
-    "rb_obj_recovery_sale": "Sach batau ji — jo families yeh offer le kar gayi hain, bahut khush hain. Aadhe daam mein ghar ka look hi badal jaata hai. Aap bhi ek baar aa kar dekhiye, achha lagega.",
-    "rb_hook_cta_sale": "Aap bhi hamare purane customer hain, isliye yeh Independence Day sale maine khud share kiya ji. Main WhatsApp par furniture ke photos aur 50% off prices bhej deti hoon — ek baar dekh lijiye, decision baad mein bhi le sakte hain.",
-    "rb_wa_cta_sale": "Main saari details abhi WhatsApp par bhej deti hoon ji — photos, 50% off wali prices, sab. Aap aaram se dekh lijiyega, decision baad mein bhi le sakte hain.",
-    "rb_close_sale": "Bahut achha ji! Main abhi WhatsApp par photos aur prices bhej deti hoon. Aur ek baar showroom aa jaiye — 16 August se pehle. Milte hain! Shukriya.",
-    "rb_close_conviction_sale": "Bas itna keh rahi hoon, pieces limited hain aur offer sirf 16 August tak hai ji — showroom mein aaiye, seedha 50% off le jaaiye. Bahut shukriya!",
 }
 
 REACT_C_SCRIPT = {
@@ -200,23 +159,6 @@ REACT_C_SCRIPT = {
     "rc_appointment_reask": "Maaf kijiye ji, date theek se samajh nahi aayi. Ek baar phir se bata dijiye please?",
     "rc_filler_1": "Haan ji...", "rc_filler_2": "Ji haan...", "rc_filler_3": "Bilkul ji...",
     "rc_filler_4": "Achha ji...", "rc_filler_5": "Samajh gayi ji...", "rc_filler_6": "Theek hai ji...",
-
-    # Independence Day sale -- see the matching comment block in
-    # REACT_A_SCRIPT above for the mechanism (play_key()'s _sale_active()
-    # swap) and why "no hidden condition" is deliberately not claimed.
-    "rc_greet_main_sale": "Ek chhota sa sawaal poochun ji? Independence Day par Krishna Furniture mein flat 50% off chal raha hai, sirf 16 August tak — iske baare mein sunna chahenge?",
-    "rc_greet_repeat_sale": "Haan ji — main yahi pooch rahi thi, Independence Day sale chal rahi hai abhi, flat 50% off, sirf 16 August tak — toh sunna chahenge?",
-    "rc_offer_main_sale": "Toh bas wahi offer chal raha hai ji — Independence Day sale, flat 50% off, sirf 16 August tak. Ek aur baat bataun?",
-    "rc_offer_explain_sale": "Bilkul simple hai ji — jo furniture pasand aaye, uske price par seedha 50% off. Bas 16 August tak, uske baad yeh rate wapas nahi milega. Koi shart nahi.",
-    "rc_offer_urgency_sale": "Bas itna ki pieces limited hain aur offer sirf 16 August tak hai ji — isiliye keh rahi hoon, dekh lijiye toh behtar rahega. Baaki poori tarah aapki marzi.",
-    "rc_obj_not_interested_sale": "Ek baar WhatsApp par bas photos aur sale price dekh lijiyega ji — koi pressure nahi. Pasand aaye toh baat aage badhaate hain.",
-    "rc_obj_busy_sale": "Bilkul samajhti hoon ji, aap busy hain — main sirf details WhatsApp par bhej deti hoon. Bas offer sirf 16 August tak hai, isliye jaldi dekh lijiyega.",
-    "rc_obj_expensive_sale": "Samajhti hoon ji, par abhi toh flat 50% off hai — seedha aadha price. 16 August ke baad yeh rate nahi milega. Exact price WhatsApp par bhej deti hoon, ek baar dekh lijiye.",
-    "rc_obj_online_sale": "Sahi kaha ji. Bas online par delivery, installation, after-sales sab alag se lagta hai. Yahan seedha 50% off milta hai showroom price par. Poora comparison WhatsApp par bhej deti hoon.",
-    "rc_obj_think_sale": "Zaroor soch lijiye ji, yeh toh sahi baat hai. Main details WhatsApp par bhej ke rakhti hoon — jab bhi decide karein, saamne rahengi. Bas offer 16 August tak hai, itna dhyaan rahe.",
-    "rc_obj_recovery_sale": "Sach batau ji — jo families yeh offer le kar gayi hain, bahut khush hain. Aadhe daam mein ghar ka look hi badal jaata hai. Aap bhi ek baar aa kar dekhiye, achha lagega.",
-    "rc_wa_cta_sale": "Main saari details abhi WhatsApp par bhej deti hoon ji — photos, 50% off wali prices, sab. Aap aaram se dekh lijiyega, decision baad mein bhi le sakte hain. Koi commitment nahi.",
-    "rc_close_sale": "Bahut achha ji! Main abhi WhatsApp par photos aur prices bhej deti hoon. Aur ek baar showroom aa jaiye — 16 August se pehle. Milte hain! Shukriya.",
 }
 
 # The only 4 product categories fresh_greet_*/fresh_greet_who_* has dedicated
