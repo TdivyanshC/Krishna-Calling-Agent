@@ -1,5 +1,11 @@
 # Agent Replies — Only What The Agent Says
 
+> **⚠️ SUPERSEDED 2026-08-15.** This is the OLD pre-rewrite text. Every line
+> the agent says has since been rewritten to the warm/formal register in
+> `Agent_Replies_Warm.md` (user-approved verbatim) and implemented in
+> `knowledge_react_abc.py` — that file's script dicts are the current source
+> of truth, not this one. Left in place for historical review context only.
+
 No keywords, no routing, no customer side. Just every line. Existing (live) lines first, then the newly proposed ones from the category-expansion review, clearly separated.
 
 ---

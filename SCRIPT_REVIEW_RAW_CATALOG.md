@@ -1,5 +1,15 @@
 # Script Review — Raw Catalog
 
+> **⚠️ SUPERSEDED 2026-08-15.** This snapshot predates the Agent_Replies_Warm.md
+> warm rewrite — every agent line below is the OLD pre-rewrite text, and the
+> keyword lists below are missing the 22 new situational categories (wrong_number,
+> callback_later, want_human, legal_threat, ask_emi, etc.) added the same day.
+> **Current source of truth for both is the live code**: agent lines in
+> `knowledge_react_abc.py` (REACT_A_SCRIPT/REACT_B_SCRIPT/REACT_C_SCRIPT/
+> SHARED_SCRIPT/CALL2_SCRIPT/CALL3_SCRIPT/FRESH_CTA_SCRIPT), keywords in the
+> same file's REACT_ABC_INTENTS/SHARED_INTENTS. This file is left in place for
+> historical review context only — do not treat anything below as current.
+
 Two lists, kept deliberately separate and unconnected, exactly as requested:
 1. **Every customer-reply pattern the system currently recognizes**, grouped by category (this is the literal keyword list from the code — not a guess, this is what's actually live).
 2. **Every line the agent currently says**, grouped by campaign/flow.

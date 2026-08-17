@@ -30,7 +30,17 @@ SPEAKER_MAP = {
 # FORCE_REGEN_ALL = True means every non-filler key gets regenerated on the
 # correct per-plan voice, regardless of whether its text changed. Necessary
 # because changing the voice mapping affects ALL keys, not just edited ones.
-FORCE_REGEN_ALL = False
+#
+# Set True 2026-08-15 for the Agent_Replies_Warm.md rewrite: every existing
+# key's TEXT changed (not just a handful), and generate_wav() below only
+# checks whether a same-named .wav file already exists on disk -- it has no
+# content-hash comparison, so with this False almost every regenerated key
+# would silently keep serving its stale pre-rewrite audio forever, exactly
+# the failure mode already documented for the smaller 2026-08-11 case below.
+# Set back to False after this run completes -- leaving it True permanently
+# would re-download and re-pay for every key on every future run even when
+# nothing changed.
+FORCE_REGEN_ALL = True
 # 2026-08-11: text changed in place for these 3 (dropped "furniture exchange"
 # wording so call2/3 reads correctly regardless of which offer Call 1
 # pitched) -- same key names, so the stale cached audio must be force-deleted
@@ -55,6 +65,22 @@ DELETED_KEYS = {"ra_wa_cta", "rc_close_conviction"}
 
 
 def _speaker_for(key: str) -> str:
+    # Cross-flow-generic keys (obj_repeat_generic_ritu, obj_escalate_generic_
+    # simran, ...) encode their voice as a trailing suffix, not a prefix --
+    # route_objection() (webhook_reactivation.py) picks the exact key name
+    # per-call via PREFIX_VOICE_MAP specifically so the SAME shared line
+    # renders in whichever voice is already speaking. Found 2026-08-15 while
+    # preparing cache regen for the warm-rewrite's new categories: the
+    # prefix-only lookup below saw "obj" (not in SPEAKER_MAP) for every one
+    # of these keys and silently fell back to "shreya" regardless of the
+    # suffix, meaning every {ritu,simran}-suffixed generic key would have
+    # been cached with the wrong voice baked in permanently -- the exact
+    # same hardcoded-voice bug class already found and fixed once in
+    # play_dynamic_text() and flagged (not yet fixed) in _resolve_key_url()'s
+    # cache-miss branch, just in the cache-generation script this time.
+    for voice in ("ritu", "shreya", "simran"):
+        if key.endswith(f"_{voice}"):
+            return voice
     prefix = key.split("_")[0]
     return SPEAKER_MAP.get(prefix, "shreya")
 
