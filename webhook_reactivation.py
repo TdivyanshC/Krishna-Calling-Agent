@@ -565,6 +565,71 @@ async def route_objection(
     # worked.
     _defer_to_not_interested = "not_interested" in intents and not (prefix == "c2" and state == "WA_CHECK")
 
+    # 0a. legal_threat -- added 2026-08-15 (Agent_Replies_Warm.md rewrite).
+    #     Highest priority in this function: a caller threatening legal or
+    #     regulatory action is a real compliance-risk signal, not an
+    #     ordinary objection, so it's checked before repeat/price/trust and
+    #     fires unconditionally (not deferred to not_interested). Terminal,
+    #     same family as DNC. NOTE: only the script + call-end behavior is
+    #     implemented here -- NEW_CATEGORIES_PROPOSAL.md flagged that this
+    #     should ALSO flag the lead for real human review (who sees it,
+    #     where it surfaces); that mechanism doesn't exist anywhere in this
+    #     codebase and is NOT built by this change. Today a legal_threat
+    #     call just ends politely and otherwise leaves no trace beyond the
+    #     normal call transcript/logs -- flagging for a real decision later.
+    if "legal_threat" in intents:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_legal_threat_generic_{voice}", session)
+        return False
+
+    # 0b. wrong_number -- added 2026-08-15. Terminal: apologize once, end
+    #     the call. Deliberately NOT written to any new lead status (e.g. a
+    #     `wrong_number` status distinct from DNC) -- see the documented
+    #     silent-status-write-failure pattern (status values not present in
+    #     the DB's CHECK constraint fail silently on write). Adding a new
+    #     status value needs a real DB-side decision first, not a guess
+    #     baked into this dispatcher. Today this only ends the call
+    #     politely; the orchestrator's retry logic still treats this number
+    #     like any other unconfirmed lead and may call it again later.
+    if "wrong_number" in intents:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_wrong_number_generic_{voice}", session)
+        return False
+
+    # 0c. person_unavailable -- added 2026-08-15. Terminal for THIS call
+    #     only (not DNC, not wrong_number -- same lead, just wrong moment).
+    #     No callback-time capture on this path -- that's callback_later's
+    #     job, kept separate since this is "not even the right person," not
+    #     "right person, bad time."
+    if "person_unavailable" in intents:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_person_unavailable_generic_{voice}", session)
+        return False
+
+    # 0d. not_my_customer -- added 2026-08-15. NOT terminal -- this could
+    #     still be a real prospect who just isn't a *repeat* customer, so
+    #     acknowledge and let the call continue naturally (no state change);
+    #     if they push back again the existing not_interested handling
+    #     downstream takes over, same as the doc's "if they push back again,
+    #     treat as not_interested" guidance.
+    if "not_my_customer" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_not_my_customer_generic_{voice}", session)
+        return True
+
+    # 0e. bare_negative -- added 2026-08-15. Exact-whole-utterance check
+    #     (see _is_bare_negative()'s docstring near _is_filler_continuer
+    #     above), not a keyword in `intents` -- a bare "nahi"/"no" doesn't
+    #     say no to *what*, so this asks one soft clarifying question rather
+    #     than treating it as a decline. Checked only when nothing else in
+    #     `intents` already matched anything above (a bare "no" alongside
+    #     another real signal should let that signal drive routing, not be
+    #     shadowed by this).
+    if not intents and _is_bare_negative(transcript) and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_bare_negative_generic_{voice}", session)
+        return True
+
     # 1. hard-rejection/DNC -- already handled by check_hard_rejection() at
     #    each call site, immediately before this function is called. Not
     #    repeated here; this dispatcher only runs for turns that were NOT a
@@ -782,6 +847,99 @@ async def route_objection(
         await play_key(call_uuid, f"obj_wa_prefers_generic_{voice}", session)
         return True
 
+    # 11. already_called (customer complains about call frequency) -- added
+    #     2026-08-15. Not terminal -- acknowledge once, call continues.
+    #     NEW_CATEGORIES_PROPOSAL.md's routing note also proposed widening
+    #     this lead's retry cooldown in supabase_calling.py as a direct
+    #     consequence of this intent (distinct from ordinary disinterest) --
+    #     NOT implemented here, script-only for now.
+    if "already_called" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_already_called_generic_{voice}", session)
+        return True
+
+    # 12. callback_later -- added 2026-08-15. NEW_CATEGORIES_PROPOSAL.md
+    #     flagged this needs a real decision: there's no callback-time slot
+    #     anywhere in this system (appointment_confirm captures a showroom
+    #     visit DATE, not a callback TIME), so honoring "call me at 6pm"
+    #     would need new orchestrator capability, not just a line. Going
+    #     with Option 1 (acknowledge only) here -- plays the doc's primary
+    #     ask-for-a-time line, but nothing captures or acts on whatever time
+    #     the caller actually gives; the call still just ends on the
+    #     existing retry cooldown like any other soft close. Real
+    #     callback-time capture is a separate, larger piece of work.
+    if "callback_later" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_callback_later_generic_{voice}", session)
+        return False
+
+    # 13. language_preference -- added 2026-08-15. Every TTS call in this
+    #     codebase is hardcoded to lang="hi" -- there is no English/Punjabi
+    #     voice wired in anywhere. Going with the honest Hindi-only stopgap
+    #     (Option 1 from NEW_CATEGORIES_PROPOSAL.md / the doc's "honest"
+    #     variant) rather than the doc's "warm, general" version, which
+    #     implies a capability (comfortably switching languages) this system
+    #     doesn't have. Not terminal, no state change.
+    if "language_preference" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_language_preference_generic_{voice}", session)
+        return True
+
+    # 14. uncertain ("pata nahi"/"shayad") -- added 2026-08-15. Treated like
+    #     a softer sochna_hai: offer WhatsApp info, don't push for a date,
+    #     no state change.
+    if "uncertain" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_uncertain_generic_{voice}", session)
+        return True
+
+    # 15. Product/commercial Q&A fallbacks -- added 2026-08-15. Same honest-
+    #     deflection pattern as the existing ask_valuation/ask_price_range
+    #     handling: acknowledge the question, don't fabricate a number,
+    #     route to WhatsApp/showroom. Not terminal, no state change.
+    #     ask_invoice_gst is answered directly (plain yes/no a retailer
+    #     should just confirm), everything else defers.
+    _QA_FALLBACK_INTENTS = (
+        "ask_emi", "ask_payment_method", "ask_warranty", "ask_delivery_charge",
+        "ask_return_policy", "ask_bargain", "ask_invoice_gst",
+        "ask_product_quality", "ask_pickup_logistics", "ask_call_recorded",
+    )
+    for _qa_intent in _QA_FALLBACK_INTENTS:
+        if _qa_intent in intents and not _defer_to_not_interested:
+            voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+            await play_key(call_uuid, f"obj_{_qa_intent}_generic_{voice}", session)
+            return True
+
+    # 16. reschedule_appointment / cancel_appointment -- added 2026-08-15,
+    #     script-only. NEW_CATEGORIES_PROPOSAL.md's routing notes call for
+    #     real state logic here (clearing session.appointment_confirmed and
+    #     re-opening the same date-capture flow appointment_confirm already
+    #     uses for reschedule; clearing the confirmed date and moving to a
+    #     soft, still-eligible-for-recontact close for cancel) -- NOT
+    #     implemented. This only plays the acknowledgment line; it does not
+    #     touch session.appointment_confirmed or any stored visit date, so a
+    #     "reschedule" request today gets a warm verbal reply but the old
+    #     date/confirmation state is left exactly as it was.
+    if "reschedule_appointment" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_reschedule_appointment_generic_{voice}", session)
+        return True
+    if "cancel_appointment" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_cancel_appointment_generic_{voice}", session)
+        return True
+
+    # 17. want_human -- added 2026-08-15, same honesty principle as escalate
+    #     (category 7 above): no live transfer capability exists, so this
+    #     says so plainly and redirects to the Customer Relations Head
+    #     callback (same not-yet-backed promise documented on
+    #     obj_escalate_generic above) rather than pretending a transfer is
+    #     happening.
+    if "want_human" in intents and not _defer_to_not_interested:
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_want_human_generic_{voice}", session)
+        return True
+
     return None
 
 
@@ -846,6 +1004,24 @@ _FILLER_CONTINUER_WORDS = {"hmm", "hmmm", "हम्म", "हम्म्म", 
 def _is_filler_continuer(text: str) -> bool:
     tokens = _tokenize(text)
     return bool(tokens) and all(tok in _FILLER_CONTINUER_WORDS for tok in tokens)
+
+
+# bare_negative -- added 2026-08-15 (NEW_CATEGORIES_PROPOSAL.md's own
+# caution, carried over): a bare "no" needs exact-whole-utterance matching,
+# same mechanism as _is_filler_continuer() above, NOT a substring/token
+# keyword in knowledge_react_abc.py's REACT_ABC_INTENTS -- "nahi"/"no" as a
+# token-matched keyword would false-fire inside completely unrelated
+# sentences that merely contain the word ("mujhe nahi pata", "abhi nahi
+# lekin sochunga"), where the customer isn't giving a bare negative reply at
+# all. Only fires when EVERY token in the utterance is one of these bare
+# negation words -- multi-token utterances fall through to real intent
+# matching untouched, same discipline as _is_filler_continuer.
+_BARE_NEGATIVE_WORDS = {"nahi", "nahin", "na", "नहीं", "ना", "नही", "no"}
+
+
+def _is_bare_negative(text: str) -> bool:
+    tokens = _tokenize(text)
+    return bool(tokens) and all(tok in _BARE_NEGATIVE_WORDS for tok in tokens)
 
 
 _BRIDGING_FILLERS = {"bhi", "भी", "mein", "में", "hi", "ही", "toh", "तो"}
@@ -1191,8 +1367,16 @@ NOT COVERED (explicitly UNKNOWN, never answer these): EMI/installment, delivery 
 online ordering, cash on delivery, old furniture buyback/exchange terms, payment methods, discount codes,
 GST/tax, refund/return policy."""
 
-_REACT_LLM_REPROMPT_TEXT = "Maaf kijiye, thik se sun nahi paayi. Kya aap phir se bata sakte hain?"
-_REACT_LLM_UNKNOWN_TEXT = "Yeh detail abhi mere paas nahi hai — main confirm karke WhatsApp par bhej deti hoon."
+_REACT_LLM_REPROMPT_TEXT = "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi aayi. Ek baar phir se bata dijiye please?"
+# 2026-08-15 warm rewrite -- Agent_Replies_Warm.md's ★ "Random / can't-answer
+# question" fallback (its own "big missing piece" callout): apologizes,
+# stays honest (no fabricated answer), offers the Customer Relations Head
+# callback instead of a flat "I don't have this detail." Same not-yet-backed
+# promise as obj_escalate_generic/obj_want_human_generic above -- nothing
+# captures or acts on the implied "theek rahega?" yes/no here either, this
+# is a single fixed string same as before, just warmer and honest about
+# needing to escalate rather than implying WhatsApp will have the answer.
+_REACT_LLM_UNKNOWN_TEXT = "Ohh, yeh accha sawaal hai ji — sach kahun toh iska sahi jawab main abhi confirm kar ke dena chahungi, taaki aapko kuch galat na bataun. Agar aap kahein, toh main hamari Customer Relations Head se aapke liye ek call schedule karwa deti hoon — woh aapko poora aur sahi jawab de dengi. Theek rahega?"
 
 _REACT_LLM_CLASSIFY_PROMPT = f"""Neeche ek customer ka jawab hai ek outbound sales call mein (Krishna
 Furniture, Independence Day sale). Aapke paas sirf yeh FACTS hain:
