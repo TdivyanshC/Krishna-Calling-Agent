@@ -28,7 +28,7 @@ budget_numeric: if range given take the HIGHER bound as integer (e.g. "1 se 2 la
 
     try:
         resp = await _get_groq().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=60,
             temperature=0.0,
@@ -79,7 +79,7 @@ Reply with JSON only, no explanation: {{"date": "YYYY-MM-DD or null"}}"""
 
     try:
         resp = await _get_groq().chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="groq/compound-mini",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=30,
             temperature=0.0,

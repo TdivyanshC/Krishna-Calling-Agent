@@ -17,6 +17,7 @@ import httpx
 from groq import AsyncGroq
 
 from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_INTENTS, SHARED_SCRIPT, PREFIX_VOICE_MAP, CALL2_SCRIPT, CALL3_SCRIPT, normalize_fresh_product_key
+from knowledge_react_abc_en import get_script_en, SHARED_SCRIPT_EN, CALL2_SCRIPT_EN, CALL3_SCRIPT_EN, EN_SPEAKER
 from supabase_calling import mark_dnc_immediate
 from audit_log import audit_event
 
@@ -152,13 +153,13 @@ async def _get_http_client() -> httpx.AsyncClient:
 _play_locks: dict[str, asyncio.Lock] = {}
 
 
-def _static_wav_path(key: str) -> str:
-    return os.path.join(STATIC_DIR, f"{key}_hi.wav")
+def _static_wav_path(key: str, lang: str = "hi") -> str:
+    return os.path.join(STATIC_DIR, f"{key}_{lang}.wav")
 
-def _static_url(key: str) -> str | None:
-    path = _static_wav_path(key)
+def _static_url(key: str, lang: str = "hi") -> str | None:
+    path = _static_wav_path(key, lang)
     if os.path.exists(path) and os.path.getsize(path) > 1000:
-        return f"{BASE_URL}/audio/static/{key}_hi.wav"
+        return f"{BASE_URL}/audio/static/{key}_{lang}.wav"
     return None
 
 
@@ -268,14 +269,35 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
     instead of firing separate Play calls that interrupt each other — see
     _vobiz_play()'s docstring for why that matters.
     """
+    # Bilingual: session.lang is "hi"/"hinglish"/"en" (lang_detect.detect_lang(),
+    # tracked once per turn in webhook.py's respond() -- see that block's
+    # comment for why it now runs for every flow, not just fresh_lead).
+    # "hinglish" collapses to the Hindi dict here on purpose: the existing
+    # Hindi script content is already Hinglish-natural (English loanwords
+    # mixed in throughout), so there's no separate third register to
+    # maintain -- only a caller who's detected as genuinely speaking English
+    # gets the English dict.
+    lang = "en" if getattr(session, "lang", "hi") == "en" else "hi"
+
     call_cycle = getattr(session, "call_cycle", None) if session else None
-    if call_cycle == "2":
-        script = CALL2_SCRIPT
-    elif call_cycle == "3":
-        script = CALL3_SCRIPT
+    if lang == "en":
+        if call_cycle == "2":
+            script = CALL2_SCRIPT_EN
+        elif call_cycle == "3":
+            script = CALL3_SCRIPT_EN
+        else:
+            campaign = getattr(session, "campaign", "react_a") if session else "react_a"
+            script   = get_script_en(campaign)
+        shared = SHARED_SCRIPT_EN
     else:
-        campaign = getattr(session, "campaign", "react_a") if session else "react_a"
-        script   = get_script(campaign)
+        if call_cycle == "2":
+            script = CALL2_SCRIPT
+        elif call_cycle == "3":
+            script = CALL3_SCRIPT
+        else:
+            campaign = getattr(session, "campaign", "react_a") if session else "react_a"
+            script   = get_script(campaign)
+        shared = SHARED_SCRIPT
 
     # Checked against the base key on purpose, before the sale-variant swap
     # below — offer_explained tracks the semantic slot (was the offer
@@ -287,35 +309,36 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
     if session is not None and log_transcript:
         if not hasattr(session, "conversation"):
             session.conversation = []
-        # Falls back to SHARED_SCRIPT for keys not in the active flow's own
-        # script (e.g. route_objection()'s obj_repeat_generic, which is
+        # Falls back to the shared dict for keys not in the active flow's
+        # own script (e.g. route_objection()'s obj_repeat_generic, which is
         # flow-agnostic and deliberately not duplicated into every per-plan
         # dict). Existing keys are unaffected -- they're always found in
         # their primary script, so this fallback never triggers for them.
-        text = script.get(key) or SHARED_SCRIPT.get(key) or key
+        text = script.get(key) or shared.get(key) or key
         session.conversation.append(("assistant", text))
 
     _turn = getattr(session, "turn_idx", None) if session else None
     if _turn is None:
         _turn = getattr(session, "turn_count", 0) if session else 0
 
-    url = _static_url(key)
+    url = _static_url(key, lang)
     if url:
-        logger.info(f"[{call_uuid}] CACHE HIT → {key}")
+        logger.info(f"[{call_uuid}] CACHE HIT → {key} [{lang}]")
         audit_event(call_uuid, "tts", turn=_turn, key=key, cached=True)
         if session is not None:
-            session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_file_duration(_static_wav_path(key))
+            session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_file_duration(_static_wav_path(key, lang))
         return url
 
-    logger.warning(f"[{call_uuid}] CACHE MISS → {key} — generating live")
+    logger.warning(f"[{call_uuid}] CACHE MISS → {key} [{lang}] — generating live")
     audit_event(call_uuid, "tts", turn=_turn, key=key, cached=False)
-    text = script.get(key) or SHARED_SCRIPT.get(key)
+    text = script.get(key) or shared.get(key)
     if not text:
-        logger.error(f"[{call_uuid}] No text for key: {key}")
+        logger.error(f"[{call_uuid}] No text for key: {key} [{lang}]")
         return None
     try:
         from tts_engine import get_speech
-        wav_bytes, audio_url, _ = await get_speech(text, lang="hi", static_key=key)
+        speaker = EN_SPEAKER if lang == "en" else None
+        wav_bytes, audio_url, _ = await get_speech(text, lang=lang, static_key=key, speaker=speaker)
         if audio_url:
             if session is not None:
                 session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_bytes_duration(wav_bytes or b"")
@@ -861,16 +884,32 @@ async def route_objection(
         await play_key(call_uuid, f"obj_callback_later_generic_{voice}", session)
         return False
 
-    # 13. language_preference -- added 2026-08-15. Every TTS call in this
-    #     codebase is hardcoded to lang="hi" -- there is no English/Punjabi
-    #     voice wired in anywhere. Going with the honest Hindi-only stopgap
-    #     (Option 1 from NEW_CATEGORIES_PROPOSAL.md / the doc's "honest"
-    #     variant) rather than the doc's "warm, general" version, which
-    #     implies a capability (comfortably switching languages) this system
-    #     doesn't have. Not terminal, no state change.
-    if "language_preference" in intents and not _defer_to_not_interested:
+    # 13. lang_pref_english/lang_pref_hindi/lang_pref_other -- rewritten
+    #     2026-08-18 now that real English support exists
+    #     (knowledge_react_abc_en.py) -- an explicit request always wins
+    #     instantly, same principle as the auto-detect gating in
+    #     webhook.py's respond() (see that block's comment): don't wait for
+    #     detect_lang() confidence to catch up, flip session.lang right away
+    #     and lock the streak high so the very next ordinary turn doesn't
+    #     immediately flip it back on some ambiguous signal. Not terminal,
+    #     no react/call2/call3 STATE change -- only the language changes.
+    if "lang_pref_english" in intents and not _defer_to_not_interested:
+        session.lang = "en"
+        session.lang_streak = 5
         voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
-        await play_key(call_uuid, f"obj_language_preference_generic_{voice}", session)
+        await play_key(call_uuid, f"obj_lang_pref_english_generic_{voice}", session)
+        return True
+    if "lang_pref_hindi" in intents and not _defer_to_not_interested:
+        session.lang = "hi"
+        session.lang_streak = 5
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_lang_pref_hindi_generic_{voice}", session)
+        return True
+    if "lang_pref_other" in intents and not _defer_to_not_interested:
+        # Punjabi (or anything else unsupported) -- honest, doesn't touch
+        # session.lang either way.
+        voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+        await play_key(call_uuid, f"obj_lang_pref_other_generic_{voice}", session)
         return True
 
     # 14. uncertain ("pata nahi"/"shayad") -- added 2026-08-15. Treated like
@@ -1294,7 +1333,7 @@ async def _llm_classify_refusal(t: str, call_uuid: str) -> bool:
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="groq/compound-mini",
                 messages=[{"role": "user", "content": _REFUSAL_CLASSIFY_PROMPT.format(utterance=t)}],
                 max_tokens=3,
                 temperature=0,
@@ -1342,7 +1381,8 @@ async def _llm_classify_refusal(t: str, call_uuid: str) -> bool:
 # observed above is structurally possible for those two cases anymore.
 _REACT_LLM_FACTS = """STORE: Krishna Furniture. Priya (aap) ek existing/purane customer ko
 personally call kar rahi hain.
-OFFER: Independence Day Sale — flat 50% off, sirf 16 August 2026 tak valid.
+OFFER: Purana furniture exchange karne par uski value milti hai, aur naye furniture par 25%
+discount — total milakar 43 se 50% tak saving ho sakti hai. Koi fixed end-date nahi hai.
 CATEGORIES COVERED BY THIS OFFER: sofa, bed, dining table, wardrobe, chair.
 STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo — wardrobe/chair ka koi price yahan
 NAHI diya gaya hai, agar koi wardrobe ya chair ka exact price poochhe toh yeh UNKNOWN hai, kabhi
@@ -1367,7 +1407,7 @@ _REACT_LLM_REPROMPT_TEXT = "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi 
 _REACT_LLM_UNKNOWN_TEXT = "Ohh, yeh accha sawaal hai ji — sach kahun toh iska sahi jawab main abhi confirm kar ke dena chahungi, taaki aapko kuch galat na bataun. Agar aap kahein, toh main hamari Customer Relations Head se aapke liye ek call schedule karwa deti hoon — woh aapko poora aur sahi jawab de dengi. Theek rahega?"
 
 _REACT_LLM_CLASSIFY_PROMPT = f"""Neeche ek customer ka jawab hai ek outbound sales call mein (Krishna
-Furniture, Independence Day sale). Aapke paas sirf yeh FACTS hain:
+Furniture, exchange offer). Aapke paas sirf yeh FACTS hain:
 
 {_REACT_LLM_FACTS}
 
@@ -1417,9 +1457,14 @@ _REACT_LLM_GROUNDED_PRICES = {"₹33,000", "₹71,000", "₹1,19,000"}
 # back ANSWERABLE every single time, then the generation step confidently
 # hallucinated "Arre, yeh offer sirf sofa, bed... ke liye hai" -- a fluent,
 # grounded-SOUNDING answer to something that was never a real question.
-# llama-3.1-8b-instant appears biased toward forcing short, low-content
-# fragments into ANSWERABLE rather than correctly recognizing them as
-# UNCLEAR. Real short questions in this domain ("EMI?", "warranty?") still
+# llama-3.1-8b-instant (the model in use at the time) appeared biased toward
+# forcing short, low-content fragments into ANSWERABLE rather than correctly
+# recognizing them as UNCLEAR. That model was retired by Groq and swapped to
+# groq/compound-mini 2026-08-18 (llama-3.1-8b-instant started 404ing --
+# confirmed live, every classify call was silently falling to UNCLEAR) --
+# this specific bias hasn't been re-verified against the new model, but the
+# guard itself is cheap and model-agnostic so it's left in place regardless.
+# Real short questions in this domain ("EMI?", "warranty?") still
 # carry a real content word and are allowed through; this only catches
 # utterances built ENTIRELY out of bare connective/filler words with no
 # content word at all -- exactly the "और ये" shape, nothing broader.
@@ -1440,7 +1485,7 @@ async def _react_llm_classify(t: str, call_uuid: str) -> str:
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="groq/compound-mini",
                 messages=[{"role": "user", "content": _REACT_LLM_CLASSIFY_PROMPT.format(utterance=t)}],
                 max_tokens=5,
                 temperature=0,
@@ -1470,7 +1515,7 @@ async def _llm_fallback_reply_impl(t: str, call_uuid: str) -> str | None:
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="groq/compound-mini",
                 messages=[{"role": "user", "content": _REACT_LLM_ANSWER_PROMPT.format(utterance=t)}],
                 max_tokens=80,
                 temperature=0.2,
@@ -1549,6 +1594,12 @@ async def play_dynamic_text(call_uuid: str, text: str, session=None, voice: str 
         _turn = getattr(session, "turn_count", 0) if session else 0
     try:
         from tts_engine import get_speech
+        # Deliberately still lang="hi" unconditionally -- this is the LLM
+        # grounded-answer fallback path (_llm_fallback_reply_impl and its
+        # FACTS/classify/generation prompts) which is Hindi-only and NOT
+        # part of the 2026-08-18 bilingual pass; see _REACT_LLM_UNKNOWN_TEXT's
+        # comment. An English-speaking caller whose question falls through to
+        # this path will still hear a Hindi-generated answer for now.
         wav_bytes, audio_url, _ = await asyncio.wait_for(
             get_speech(text, lang="hi", static_key=None, speaker=voice), timeout=3.0
         )

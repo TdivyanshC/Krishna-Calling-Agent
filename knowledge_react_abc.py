@@ -438,12 +438,26 @@ SHARED_SCRIPT = {
     "obj_callback_later_generic_ritu": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_shreya": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_simran": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
-    # Hindi-only honest variant (Option 1 from NEW_CATEGORIES_PROPOSAL.md) --
-    # see route_objection()'s comment for why the doc's "warm, general"
-    # version (which implies real multi-language capability) wasn't used.
-    "obj_language_preference_generic_ritu": "Ji, main abhi aaram se Hindi mein hi baat kar paungi — par bilkul aasaan bhasha mein samjha doongi. Aur jo bhi zaroori ho, WhatsApp par likh kar bhi bhej deti hoon.",
-    "obj_language_preference_generic_shreya": "Ji, main abhi aaram se Hindi mein hi baat kar paungi — par bilkul aasaan bhasha mein samjha doongi. Aur jo bhi zaroori ho, WhatsApp par likh kar bhi bhej deti hoon.",
-    "obj_language_preference_generic_simran": "Ji, main abhi aaram se Hindi mein hi baat kar paungi — par bilkul aasaan bhasha mein samjha doongi. Aur jo bhi zaroori ho, WhatsApp par likh kar bhi bhej deti hoon.",
+    # Replaced 2026-08-18 -- real English support now exists
+    # (knowledge_react_abc_en.py), so the old single Hindi-only honest
+    # stopgap ("sorry, Hindi only for now") is stale for the English-request
+    # direction. route_objection() flips session.lang BEFORE calling
+    # play_key() for lang_pref_english/lang_pref_hindi, so in the normal
+    # case these Hindi-dict copies are never actually heard (the English
+    # dict's version plays instead once lang flips to "en") -- kept here
+    # anyway for key-parity between the Hindi/English SHARED_SCRIPT dicts
+    # and as a reasonable fallback if that ever changes.
+    "obj_lang_pref_english_generic_ritu": "Bilkul ji, ab main English mein baat karti hoon.",
+    "obj_lang_pref_english_generic_shreya": "Bilkul ji, ab main English mein baat karti hoon.",
+    "obj_lang_pref_english_generic_simran": "Bilkul ji, ab main English mein baat karti hoon.",
+    "obj_lang_pref_hindi_generic_ritu": "Bilkul ji, main Hindi mein hi baat karti hoon.",
+    "obj_lang_pref_hindi_generic_shreya": "Bilkul ji, main Hindi mein hi baat karti hoon.",
+    "obj_lang_pref_hindi_generic_simran": "Bilkul ji, main Hindi mein hi baat karti hoon.",
+    # Punjabi isn't supported (no script/TTS for it) -- honest about that
+    # specifically, doesn't flip session.lang either way.
+    "obj_lang_pref_other_generic_ritu": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",
+    "obj_lang_pref_other_generic_shreya": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",
+    "obj_lang_pref_other_generic_simran": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",
     "obj_uncertain_generic_ritu": "Koi baat nahi ji, jaldi bilkul nahi hai. Main details WhatsApp par bhej deti hoon — aaram se dekh lijiye, phir jaisa theek lage.",
     "obj_uncertain_generic_shreya": "Koi baat nahi ji, jaldi bilkul nahi hai. Main details WhatsApp par bhej deti hoon — aaram se dekh lijiye, phir jaisa theek lage.",
     "obj_uncertain_generic_simran": "Koi baat nahi ji, jaldi bilkul nahi hai. Main details WhatsApp par bhej deti hoon — aaram se dekh lijiye, phir jaisa theek lage.",
@@ -924,12 +938,32 @@ REACT_ABC_INTENTS = {
                        "evening mein try karna", "2 ghante baad call karo", "weekend pe call karna",
                        "शाम को कॉल करना", "कल सुबह कॉल करो", "थोड़ी देर बाद कॉल करो",
                        "2 घंटे बाद कॉल करो"],
-    "language_preference": ["english mein baat karo", "hindi mein baat karo",
-                            "mujhe hindi samajh nahi aati", "angrezi mein bolo",
-                            "please speak in english", "can you speak english",
-                            "punjabi mein baat karo", "hindi thik se nahi aati",
-                            "अंग्रेज़ी में बोलो", "हिंदी में बात करो",
-                            "मुझे हिंदी समझ नहीं आती", "पंजाबी में बात करो"],
+    # Split 2026-08-18 into 3 directional intents -- was a single bucket
+    # ("language_preference") that couldn't distinguish "switch me to
+    # English" from "switch me to Hindi" from "I want Punjabi", which was
+    # fine when there was only one honest stopgap reply regardless of
+    # direction ("sorry, Hindi only for now") but became actively wrong once
+    # real English support existed (knowledge_react_abc_en.py) -- a caller
+    # saying "please speak in English" needs session.lang actually switched
+    # to "en", not a generic acknowledgment. "mujhe hindi samajh nahi aati"/
+    # "hindi thik se nahi aati" ("I don't follow Hindi well") were
+    # miscategorized in the old single bucket too -- both signal "move AWAY
+    # from Hindi", i.e. the same direction as lang_pref_english, not a
+    # request FOR Hindi.
+    "lang_pref_english": ["english mein baat karo", "angrezi mein bolo",
+                          "please speak in english", "can you speak english",
+                          "speak in english", "english mein bolo", "english please",
+                          "mujhe hindi samajh nahi aati", "hindi thik se nahi aati",
+                          "hindi samajh nahi aati",
+                          "अंग्रेज़ी में बोलो", "इंग्लिश में बात करो", "इंग्लिश में बोलो",
+                          "मुझे हिंदी समझ नहीं आती", "हिंदी ठीक से नहीं आती"],
+    "lang_pref_hindi": ["hindi mein baat karo", "hindi mein bolo", "hindi please",
+                        "speak in hindi", "please speak in hindi",
+                        "हिंदी में बात करो", "हिंदी में बोलो"],
+    # Not supported at all (no Punjabi script/TTS) -- kept as its own intent
+    # so the reply can be honest about that specifically, instead of
+    # silently getting treated as an English or Hindi request.
+    "lang_pref_other": ["punjabi mein baat karo", "पंजाबी में बात करो"],
     "uncertain": ["pata nahi", "shayad", "dekhta hoon", "abhi nahi bol sakta",
                  "confirm nahi hai", "not sure",
                  "पता नहीं", "शायद", "देखता हूं", "अभी नहीं बोल सकता", "कन्फर्म नहीं है"],

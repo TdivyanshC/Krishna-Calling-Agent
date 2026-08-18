@@ -40,7 +40,8 @@ SPEAKER_MAP = {
 # Set back to False after this run completes -- leaving it True permanently
 # would re-download and re-pay for every key on every future run even when
 # nothing changed.
-FORCE_REGEN_ALL = True
+# Ran 2026-08-18: 247 generated/verified, 0 failed. Reset to False now.
+FORCE_REGEN_ALL = False
 # 2026-08-11: text changed in place for these 3 (dropped "furniture exchange"
 # wording so call2/3 reads correctly regardless of which offer Call 1
 # pitched) -- same key names, so the stale cached audio must be force-deleted
@@ -60,8 +61,14 @@ FORCE_REGEN = {
     "ra_q_price_range", "rb_q_price_range", "rc_q_price_range",
 }
 
-# Keys removed from scripts — delete stale audio if present
-DELETED_KEYS = {"ra_wa_cta", "rc_close_conviction"}
+# Keys removed from scripts — delete stale audio if present.
+# "ra_wa_cta" removed from this set 2026-08-18 -- it was re-added as a real,
+# live key back on 2026-08-13 (see its comment in knowledge_react_abc.py),
+# so it was never actually a deleted key; leaving it here would delete then
+# immediately regenerate it every run, harmless under FORCE_REGEN_ALL but
+# misleading. "rc_close_conviction" genuinely has no key in REACT_C_SCRIPT
+# (matches the Hindi original's intentional omission), so it stays.
+DELETED_KEYS = {"rc_close_conviction"}
 
 
 def _speaker_for(key: str) -> str:

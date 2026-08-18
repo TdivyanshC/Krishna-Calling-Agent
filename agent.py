@@ -118,7 +118,7 @@ async def get_groq_response(call_id: str, user_text: str) -> str:
     history = conversations[call_id][-6:]
     messages = [{"role": "system", "content": SYSTEM_PROMPT}] + history
     response = await groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="groq/compound-mini",
         messages=messages,
         max_tokens=80,
         temperature=0.7

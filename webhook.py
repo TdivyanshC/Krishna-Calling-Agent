@@ -1120,7 +1120,7 @@ Agar exact price pata nahi hai, sirf yeh bolo: "{_LLM_SAFE_FALLBACK}" — koi nu
 
 def _call_groq(text: str, session, call_uuid: str, context: str) -> str:
     llm = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="groq/compound-mini",
         messages=[
             {"role": "system", "content": context},
             *[{"role": r, "content": c} for r, c in session.conversation[-6:]],
@@ -1275,13 +1275,41 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             if session.campaign in ("react_a", "react_b", "react_c"):
                 from knowledge_react_abc import get_prefix as _get_prefix
                 _filler_prefix = _get_prefix(session.campaign)
-                _filler_url = f"{BASE_URL}/audio/static/{_filler_prefix}_filler_{_filler_n}_hi.wav"
+                # session.lang reflects the PREVIOUS turn's detected language
+                # (this fires before this turn's transcribe() call) -- good
+                # enough for a best-guess filler while the real transcript is
+                # still in flight. "react_filler_N" (the else branch below,
+                # generic "reactivation" campaign path) stays Hindi-only for
+                # now -- not part of this bilingual pass.
+                _filler_lang = "en" if getattr(session, "lang", "hi") == "en" else "hi"
+                _filler_url = f"{BASE_URL}/audio/static/{_filler_prefix}_filler_{_filler_n}_{_filler_lang}.wav"
             else:
                 _filler_url = f"{BASE_URL}/audio/static/react_filler_{_filler_n}_hi.wav"
             asyncio.create_task(play_audio_url(call_uuid, _filler_url, turn=session.turn_idx, kind="filler"))
             session.is_priya_speaking = True
             logger.info(f"[{call_uuid}] PRE-STT filler fired → {_filler_url}")
         text = await transcribe(ulaw_to_wav(audio), call_uuid=call_uuid, turn=session.turn_idx)
+
+        # ── Language detection, now for EVERY flow, not just fresh_lead ────────
+        # detect_lang()/session.lang/session.lang_streak already existed and
+        # were already live -- but only reachable by the fresh_lead
+        # state_machine() path further down, since every reactivation-engine
+        # branch below (call_cycle 2/3, react_a/b/c, fresh_cta, followup_wa)
+        # returns early before ever reaching that code. Moved up here
+        # 2026-08-18 so ALL flows get the same language tracking; the
+        # reactivation engine (webhook_reactivation.py) now reads
+        # session.lang the same way state_machine() always has. Guarded on
+        # non-trivial text so a silent/empty turn doesn't reset the streak.
+        if text and len(text.strip()) >= 2:
+            turn_lang = detect_lang(text)
+            if not hasattr(session, "lang_streak"):
+                session.lang = turn_lang
+                session.lang_streak = 1
+            elif turn_lang == session.lang:
+                session.lang_streak = getattr(session, "lang_streak", 0) + 1
+            else:
+                session.lang = turn_lang
+                session.lang_streak = 1
 
         # ── call_cycle 2/3 override — takes priority over campaign routing ─────
         # fresh_cta is the one exception: it has its own call_cycle-aware
@@ -1400,16 +1428,8 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         from webhook_reactivation import _is_ivr_fragment
         if not _is_ivr_fragment(text):
             session.turn_count_substantive = getattr(session, "turn_count_substantive", 0) + 1
-        turn_lang = detect_lang(text)
-        if not hasattr(session, "lang"):
-            session.lang = turn_lang
-            session.lang_streak = 1
-        elif turn_lang == session.lang:
-            session.lang_streak = getattr(session, "lang_streak", 0) + 1
-        else:
-            session.lang = turn_lang
-            session.lang_streak = 1
-
+        # Language detection now happens once, right after transcribe() --
+        # see that block's comment above. Just log it here.
         logger.info(f"[{call_uuid}] STT [{session.lang}] → '{text}'")
 
         from knowledge import ACK_WORDS, is_noise, fix_stt
