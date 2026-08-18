@@ -146,7 +146,7 @@ async def respond_v2(ws, session, audio: bytes, call_uuid: str, play_fn=None) ->
     try:
         # ── 1. STT (same as before) ───────────────────────────────────────────
         from webhook import transcribe, ulaw_to_wav  # your existing functions
-        text = await transcribe(ulaw_to_wav(audio))
+        text, _stt_lang = await transcribe(ulaw_to_wav(audio))
         if not text or len(text.strip()) < 2:
             logger.info(f"[{call_uuid}] Empty transcript — skip")
             return

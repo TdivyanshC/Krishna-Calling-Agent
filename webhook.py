@@ -587,7 +587,32 @@ def ulaw_to_wav(ulaw_bytes: bytes) -> bytes:
 
 
 # ─── STT ─────────────────────────────────────────────────────────────────────
-async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> str:
+async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> tuple[str, str | None]:
+    """
+    Returns (transcript_text, stt_detected_language_code). The language code
+    is Sarvam's own BCP-47 tag ("en-IN"/"hi-IN"/...), or None if it wasn't
+    returned (STT error, empty audio, etc).
+
+    language_code changed from hardcoded "hi-IN" to "unknown" 2026-08-18 --
+    confirmed live (fed real English-speech audio through both): with "hi-IN"
+    forced, Saaras transcribes English speech PHONETICALLY INTO DEVANAGARI
+    ("अपग्रेडिंग योर होम फर्नीचर...") instead of actual English text -- the
+    same phonetic-transliteration behavior already documented and worked
+    around elsewhere in this codebase for IVR fragments and keyword matching
+    (see knowledge_react_abc.py/webhook_reactivation.py's "renders spoken
+    English phonetically into Devanagari" comments). That means a genuinely
+    English-speaking caller's transcript LOOKS like Hindi script even though
+    it's 100% English, which would silently defeat lang_detect.detect_lang()'s
+    Devanagari-ratio check (webhook.py's language-tracking block, right after
+    this function is called) -- session.lang would get stuck on "hi" for an
+    English speaker no matter what they said. "unknown" (Sarvam's auto-detect)
+    was verified to produce IDENTICAL transcripts for Hindi/Hinglish audio
+    (no regression) while correctly transcribing English audio as English
+    text with language_code="en-IN" returned. Callers now prefer this
+    returned code directly for the en-IN case (skips the transcript-guessing
+    entirely) and fall back to detect_lang() otherwise -- see that block's
+    comment.
+    """
     _t0 = time.time()
     try:
         client = await _get_sarvam_client()
@@ -597,7 +622,7 @@ async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> 
                 files={"file": ("audio.wav", wav_bytes, "audio/wav")},
                 data={
                     "model": "saaras:v3",
-                    "language_code": "hi-IN",
+                    "language_code": "unknown",
                     "with_timestamps": "false",
                     "with_disfluencies": "false",
                     "prompt": (
@@ -609,22 +634,24 @@ async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> 
             )
         _duration_ms = round((time.time() - _t0) * 1000)
         if r.status_code == 200:
-            text = r.json().get("transcript", "").strip()
+            body = r.json()
+            text = body.get("transcript", "").strip()
+            stt_lang = body.get("language_code")
             if not text:
                 logger.info(f"[{call_uuid}] Saaras: empty transcript")
-                audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=_duration_ms)
-                return ""
-            logger.info(f"[{call_uuid}] STT → '{text}'")
-            audit_event(call_uuid, "stt", turn=turn, text=text, lang="hi-IN", empty=False, duration_ms=_duration_ms)
-            return text
+                audit_event(call_uuid, "stt", turn=turn, text="", lang=stt_lang or "unknown", empty=True, duration_ms=_duration_ms)
+                return "", stt_lang
+            logger.info(f"[{call_uuid}] STT [{stt_lang}] → '{text}'")
+            audit_event(call_uuid, "stt", turn=turn, text=text, lang=stt_lang or "unknown", empty=False, duration_ms=_duration_ms)
+            return text, stt_lang
         else:
             logger.error(f"[{call_uuid}] Saaras STT {r.status_code}: {r.text[:200]}")
-            audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=_duration_ms)
-            return ""
+            audit_event(call_uuid, "stt", turn=turn, text="", lang="unknown", empty=True, duration_ms=_duration_ms)
+            return "", None
     except Exception as e:
         logger.error(f"[{call_uuid}] STT error: {e}")
-        audit_event(call_uuid, "stt", turn=turn, text="", lang="hi-IN", empty=True, duration_ms=round((time.time() - _t0) * 1000))
-        return ""
+        audit_event(call_uuid, "stt", turn=turn, text="", lang="unknown", empty=True, duration_ms=round((time.time() - _t0) * 1000))
+        return "", None
 
 # ─── TTS ─────────────────────────────────────────────────────────────────────
 async def text_to_speech(text: str) -> bytes | None:
@@ -1288,7 +1315,7 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             asyncio.create_task(play_audio_url(call_uuid, _filler_url, turn=session.turn_idx, kind="filler"))
             session.is_priya_speaking = True
             logger.info(f"[{call_uuid}] PRE-STT filler fired → {_filler_url}")
-        text = await transcribe(ulaw_to_wav(audio), call_uuid=call_uuid, turn=session.turn_idx)
+        text, stt_lang = await transcribe(ulaw_to_wav(audio), call_uuid=call_uuid, turn=session.turn_idx)
 
         # ── Language detection, now for EVERY flow, not just fresh_lead ────────
         # detect_lang()/session.lang/session.lang_streak already existed and
@@ -1300,8 +1327,17 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         # reactivation engine (webhook_reactivation.py) now reads
         # session.lang the same way state_machine() always has. Guarded on
         # non-trivial text so a silent/empty turn doesn't reset the streak.
+        #
+        # Prefer Sarvam's own stt_lang for the "en-IN" case -- see
+        # transcribe()'s docstring: with language_code="unknown", Saaras
+        # correctly transcribes English speech AS English text and tags it
+        # en-IN, whereas the old hardcoded "hi-IN" forced English speech into
+        # phonetic Devanagari transcription that detect_lang()'s script-ratio
+        # check would misread as Hindi. For every other case (hi-IN, or no
+        # tag at all) detect_lang() still does the finer hi-vs-hinglish call
+        # Sarvam's STT-level tag doesn't distinguish.
         if text and len(text.strip()) >= 2:
-            turn_lang = detect_lang(text)
+            turn_lang = "en" if stt_lang == "en-IN" else detect_lang(text)
             if not hasattr(session, "lang_streak"):
                 session.lang = turn_lang
                 session.lang_streak = 1
