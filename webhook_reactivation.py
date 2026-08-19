@@ -995,6 +995,17 @@ def _tokenize(text: str) -> list[str]:
     # automatically since _phrase_in_tokens() tokenizes the keyword through
     # this same function.
     text = text.replace("ँ", "ं")
+    # Nuqta-bearing consonants (ज़/फ़/ख़/ग़/क़/ड़/ढ़ -- borrowed sounds from
+    # Persian/Arabic/English loanwords) normalized to their base consonant
+    # 2026-08-19 -- confirmed live: STT returned "बिजी" (no nuqta) for a real
+    # "busy" turn, but the keyword list spells it "बिज़ी" (with nuqta) --
+    # same shape as the chandrabindu/anusvara fix above, just a different
+    # pair of interchangeable-in-casual-writing characters. Native speakers
+    # routinely drop the nuqta in informal Hindi (texting, casual writing),
+    # and evidently so does STT sometimes -- normalizing both sides toward
+    # the base consonant here fixes it for every affected keyword at once.
+    for _nuqta, _base in (("ज़", "ज"), ("फ़", "फ"), ("ख़", "ख"), ("ग़", "ग"), ("क़", "क"), ("ड़", "ड"), ("ढ़", "ढ")):
+        text = text.replace(_nuqta, _base)
     tokens = []
     for raw in text.lower().split():
         tok = raw.strip(_TOKEN_EDGE_PUNCT)

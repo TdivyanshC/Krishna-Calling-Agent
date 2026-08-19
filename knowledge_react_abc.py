@@ -534,6 +534,7 @@ SHARED_INTENTS = {
                      "address", "location", "nazdik", "nearest",
                      "where is your showroom", "where is your store", "where are you located",
                      "where is the showroom", "where is the store",
+                     "where are your showrooms", "where are your stores", "your showrooms",
                      "कहां है", "कहाँ है", "शोरूम कहां", "लोकेशन क्या", "एड्रेस बताओ",
                      "कहां पर है", "कहाँ पर है", "स्टोर कहां", "स्टोर कहाँ", "कौनसी जगह",
                      "दुकान कहां", "shop kahan", "store kahan", "showroom kaha",
