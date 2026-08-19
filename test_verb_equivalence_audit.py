@@ -324,11 +324,45 @@ async def run_keyword_md_merge_checks():
 async def run_llm_fallback_coverage_checks():
     print("\n--- Part 6: LLM-fallback coverage extension (call2/call3) ---")
 
-    async def _fake_llm_fallback_reply(t, call_uuid):
+    async def _fake_llm_fallback_reply(t, call_uuid, facts=None):
         return "MOCKED_LLM_ANSWER"
 
     def _patch_llm(target):
         target.llm_fallback_reply = _fake_llm_fallback_reply
+
+    # fresh_cta was the one flow with ZERO LLM-fallback coverage at all.
+    # Verified separately (not via the generic cases list below) because it
+    # needs its own dedicated facts block (_FRESH_LLM_FACTS, not
+    # _REACT_LLM_FACTS -- different campaign, no exchange-offer framing
+    # established for this funnel) -- this checks BOTH that the fallback
+    # fires AND that it's using the correct, campaign-appropriate facts.
+    captured = {}
+
+    async def _fake_llm_fallback_reply_capturing(t, call_uuid, facts=None):
+        captured["facts"] = facts
+        return "FRESH_CTA_MOCKED_ANSWER"
+
+    recorder = Recorder()
+    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
+        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
+        wr.play_dynamic_text, wr.llm_fallback_reply
+    )
+    patch_io(wr, recorder)
+    wr.llm_fallback_reply = _fake_llm_fallback_reply_capturing
+    try:
+        s = make_session(campaign="fresh_cta", call_cycle=None, react_state="APPOINTMENT", fresh_product="sofa")
+        await wr.handle_fresh_cta_turn(s, "sofa ki delivery kitne din mein hogi", "test-call-uuid")
+    finally:
+        wr.llm_fallback_reply = orig_llm
+        wr.play_dynamic_text = orig_dyn
+        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
+            orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
+        )
+    ok = ("FRESH_CTA_MOCKED_ANSWER" in recorder.played
+          and captured.get("facts") is wr._FRESH_LLM_FACTS)
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'fresh_cta: unanswered question tries fallback with _FRESH_LLM_FACTS (not react FACTS)':<85} played={recorder.played!r}")
+    _results.append(ok)
 
     cases = [
         ("call3 GREETING: genuinely unmatched turn now tries the fallback",

@@ -1670,12 +1670,41 @@ _REACT_LLM_REPROMPT_TEXT = "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi 
 # needing to escalate rather than implying WhatsApp will have the answer.
 _REACT_LLM_UNKNOWN_TEXT = "Ohh, yeh accha sawaal hai ji — sach kahun toh iska sahi jawab main abhi confirm kar ke dena chahungi, taaki aapko kuch galat na bataun. Agar aap kahein, toh main hamari Customer Relations Head se aapke liye ek call schedule karwa deti hoon — woh aapko poora aur sahi jawab de dengi. Theek rahega?"
 
-_REACT_LLM_CLASSIFY_PROMPT = f"""Neeche ek customer ka jawab hai ek outbound sales call mein (Krishna
-Furniture, exchange offer). Aapke paas sirf yeh FACTS hain:
+# Added 2026-08-19 -- fresh_cta (product-follow-up campaign) audit found it
+# had ZERO LLM-fallback coverage, unlike react_a/b/c/call2/call3. Couldn't
+# just reuse _REACT_LLM_FACTS as-is: that block asserts "existing/purane
+# customer" + "exchange offer, 25% discount" framing that doesn't apply here
+# -- a fresh_cta lead is a NEW inquiry who asked about one specific product
+# via WhatsApp, not an existing customer being offered an exchange, and
+# nothing in FRESH_CTA_SCRIPT's own script text (fresh_price/fresh_trust/
+# fresh_objection) asserts a specific discount percentage for this funnel.
+# Deliberately conservative rather than assuming the same offer applies:
+# kept to what's verifiably true regardless of campaign (the 3 real base
+# prices, showroom locations/timings) and marked offer/discount specifics as
+# explicitly UNKNOWN here, rather than risk the LLM asserting a discount
+# figure never actually communicated to this lead.
+_FRESH_LLM_FACTS = """STORE: Krishna Furniture. Priya (aap) ek lead ko follow-up call kar rahi hain jisne
+WhatsApp par ek specific product mein interest dikhaya tha (bed, sofa, wardrobe, ya dining set) -- yeh
+call sirf unhe store visit ke liye ek date confirm karwane ke liye hai, koi cold sales pitch nahi.
+CATEGORIES: sofa, bed, dining table, wardrobe.
+STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo):
+  - Sofa: ₹33,000 se shuru
+  - Bed: ₹71,000 se shuru
+  - Dining set: ₹1,19,000 se shuru
+SHOWROOMS: Sector 14 Gurgaon, Delhi, Noida — Monday se Sunday, subah 10 baje se raat 8 baje tak.
+NOT COVERED (explicitly UNKNOWN, never answer these, chahe kitna bhi simple lage): koi bhi discount
+percentage ya exchange-offer ke exact terms (is lead ko kaunsa offer specifically pitch hua tha, yeh yahan
+nahi diya gaya hai), EMI/installment, delivery cost ya time, warranty, online ordering, cash on delivery,
+old furniture buyback/exchange terms, payment methods, GST/tax, refund/return policy."""
 
-{_REACT_LLM_FACTS}
 
-Customer ne kaha: "{{utterance}}"
+def _build_classify_prompt(facts: str, utterance: str) -> str:
+    return f"""Neeche ek customer ka jawab hai ek outbound sales call mein (Krishna
+Furniture). Aapke paas sirf yeh FACTS hain:
+
+{facts}
+
+Customer ne kaha: "{utterance}"
 
 Is jawab ko EXACTLY teen categories mein se ek mein classify karo:
 - ANSWERABLE: ek saaf, samajh aane wala sawaal/statement hai JISKA jawab upar diye FACTS se seedha mil sakta hai.
@@ -1700,19 +1729,22 @@ EXAMPLES (in exact examples ko follow karo):
 
 Sirf ek word mein jawab do: "ANSWERABLE" ya "UNKNOWN" ya "UNCLEAR"."""
 
-_REACT_LLM_ANSWER_PROMPT = f"""Aap Priya hain, Krishna Furniture ki taraf se phone par baat kar rahi hain.
+
+def _build_answer_prompt(facts: str, utterance: str) -> str:
+    return f"""Aap Priya hain, Krishna Furniture ki taraf se phone par baat kar rahi hain.
 Customer ne ek sawaal poocha hai jiska jawab neeche diye FACTS mein hai.
 
 FACTS:
-{_REACT_LLM_FACTS}
+{facts}
 
-Customer ne poocha: "{{utterance}}"
+Customer ne poocha: "{utterance}"
 
 Sirf in FACTS ke aadhar par, Hindi/Hinglish mein, maximum 2 chhote vaakya (20-25 shabd), jaise phone par
 bol rahe ho — jawab do. FACTS mein na ho aisi koi bhi cheez (price, availability, koi bhi fact) mat
 kaho. Vague ya generic baat mat karo (jaise "achha rate hai" ya "bahut options hain") agar exact fact
 FACTS mein nahi hai — is case mein EXACTLY yeh bolo: "{_REACT_LLM_UNKNOWN_TEXT}". Koi extra explanation
 ya prefix mat do, sirf jawab bolo."""
+
 
 _REACT_LLM_GROUNDED_PRICES = {"₹33,000", "₹71,000", "₹1,19,000"}
 
@@ -1744,13 +1776,17 @@ def _is_low_content_fragment(t: str) -> bool:
     return bool(tokens) and all(tok in _LOW_CONTENT_WORDS for tok in tokens)
 
 
-async def _react_llm_classify(t: str, call_uuid: str) -> str:
-    """Returns 'ANSWERABLE', 'UNKNOWN', or 'UNCLEAR' (defaults to UNCLEAR on any failure)."""
+async def _react_llm_classify(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str:
+    """Returns 'ANSWERABLE', 'UNKNOWN', or 'UNCLEAR' (defaults to UNCLEAR on any failure).
+
+    `facts` added 2026-08-19 to support fresh_cta's own grounding
+    (_FRESH_LLM_FACTS) -- defaults to _REACT_LLM_FACTS so every pre-existing
+    call site (react_a/b/c/call2/call3) is unaffected."""
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
                 model="groq/compound-mini",
-                messages=[{"role": "user", "content": _REACT_LLM_CLASSIFY_PROMPT.format(utterance=t)}],
+                messages=[{"role": "user", "content": _build_classify_prompt(facts, t)}],
                 max_tokens=5,
                 temperature=0,
             ),
@@ -1766,11 +1802,11 @@ async def _react_llm_classify(t: str, call_uuid: str) -> str:
         return "UNCLEAR"
 
 
-async def _llm_fallback_reply_impl(t: str, call_uuid: str) -> str | None:
+async def _llm_fallback_reply_impl(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str | None:
     if _is_low_content_fragment(t):
         logger.info(f"[{call_uuid}] low-content fragment '{t}' -- skipping LLM classify entirely, treating as UNCLEAR")
         return _REACT_LLM_REPROMPT_TEXT
-    label = await _react_llm_classify(t, call_uuid)
+    label = await _react_llm_classify(t, call_uuid, facts=facts)
     if label == "UNCLEAR":
         return _REACT_LLM_REPROMPT_TEXT
     if label == "UNKNOWN":
@@ -1780,7 +1816,7 @@ async def _llm_fallback_reply_impl(t: str, call_uuid: str) -> str | None:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
                 model="groq/compound-mini",
-                messages=[{"role": "user", "content": _REACT_LLM_ANSWER_PROMPT.format(utterance=t)}],
+                messages=[{"role": "user", "content": _build_answer_prompt(facts, t)}],
                 max_tokens=80,
                 temperature=0.2,
             ),
@@ -1812,7 +1848,7 @@ async def _llm_fallback_reply_impl(t: str, call_uuid: str) -> str | None:
 _REACT_LLM_FALLBACK_HARD_TIMEOUT = 4.0
 
 
-async def llm_fallback_reply(t: str, call_uuid: str) -> str | None:
+async def llm_fallback_reply(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str | None:
     """
     Two-step fallback for a turn detect_intents() found nothing for.
     Classifies first; only ANSWERABLE ever reaches free-form generation
@@ -1821,10 +1857,15 @@ async def llm_fallback_reply(t: str, call_uuid: str) -> str | None:
     Returns None if the overall pipeline exceeds _REACT_LLM_FALLBACK_HARD_TIMEOUT,
     or if the ANSWERABLE generation step itself fails or produces something
     ungrounded -- either way the caller falls back to the static reprompt line.
+
+    `facts` added 2026-08-19 -- defaults to _REACT_LLM_FACTS (react_a/b/c/
+    call2/call3's exchange-offer grounding); fresh_cta passes _FRESH_LLM_FACTS
+    instead, since it's a different campaign context (see that constant's
+    comment for why the two can't just share one block).
     """
     try:
         return await asyncio.wait_for(
-            _llm_fallback_reply_impl(t, call_uuid),
+            _llm_fallback_reply_impl(t, call_uuid, facts=facts),
             timeout=_REACT_LLM_FALLBACK_HARD_TIMEOUT,
         )
     except asyncio.TimeoutError:
@@ -1938,7 +1979,8 @@ async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
 _FILLER_GRACE_SECONDS = 0.45
 
 
-async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str) -> str | None:
+async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str,
+                                     facts: str = _REACT_LLM_FACTS) -> str | None:
     """
     Runs llm_fallback_reply() and only plays a filler if it's still pending
     past _FILLER_GRACE_SECONDS -- see that constant's docstring for why this
@@ -1947,8 +1989,10 @@ async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str)
     way, this only delays the DECISION to also play a filler); only the
     filler's start time moves later, past the point a fast reply would have
     already made it redundant.
+
+    `facts` threaded through 2026-08-19 for fresh_cta's _FRESH_LLM_FACTS.
     """
-    llm_task = asyncio.create_task(llm_fallback_reply(t, call_uuid))
+    llm_task = asyncio.create_task(llm_fallback_reply(t, call_uuid, facts=facts))
     done, _pending = await asyncio.wait({llm_task}, timeout=_FILLER_GRACE_SECONDS)
     if llm_task in done:
         return llm_task.result()
@@ -1956,14 +2000,15 @@ async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str)
     return await llm_task
 
 
-async def _reprompt_or_llm_fallback(call_uuid: str, t: str, session, voice: str) -> None:
+async def _reprompt_or_llm_fallback(call_uuid: str, t: str, session, voice: str,
+                                     facts: str = _REACT_LLM_FACTS) -> None:
     """
     Shared by every "genuinely unmatched turn" branch across GREETING/
-    PRESENT_OFFER/WHATSAPP_CTA/APPOINTMENT/call2's WA_CHECK: try the grounded
-    LLM fallback first, fall back to the static obj_repeat_generic_{voice}
-    reprompt line on any failure.
+    PRESENT_OFFER/WHATSAPP_CTA/APPOINTMENT/call2's WA_CHECK/call3/fresh_cta:
+    try the grounded LLM fallback first, fall back to the static
+    obj_repeat_generic_{voice} reprompt line on any failure.
     """
-    reply = await _llm_fallback_with_filler(call_uuid, t, session, voice)
+    reply = await _llm_fallback_with_filler(call_uuid, t, session, voice, facts=facts)
     if reply and await play_dynamic_text(call_uuid, reply, session, voice=voice):
         return
     # Reached if there was no reply, or play_dynamic_text() itself failed/
@@ -2258,6 +2303,25 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
         await play_key(call_uuid, "fresh_location_info", session)
         await fire_whatsapp(session, call_uuid)
         return False
+
+    # Added 2026-08-19 -- fresh_cta had ZERO LLM-fallback coverage (the only
+    # one of the 4 flows with none at all): a genuine question this catch-all
+    # didn't have a dedicated branch for (ask_price_range, ask_valuation,
+    # ask_name, a novel phrasing entirely) previously just got the generic
+    # "yeh accha design hai, kab aa sakte hain?" fresh_objection reask, which
+    # doesn't acknowledge what was actually asked. Uses _FRESH_LLM_FACTS, NOT
+    # _REACT_LLM_FACTS -- see that constant's comment for why fresh_cta needs
+    # its own grounding (different campaign, no exchange-offer framing
+    # established for this funnel). Gated the same way as call2/call3's
+    # equivalent additions: fires on a genuinely empty match OR a recognized-
+    # but-unanswered informational question, never on a bare "positive"-only
+    # acknowledgment. Stays in the same single APPOINTMENT state either way
+    # (fresh_cta has no sub-states to advance between).
+    if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+        llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, "simran", facts=_FRESH_LLM_FACTS)
+        if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice="simran"):
+            await play_key(call_uuid, "fresh_objection", session, log_transcript=False)
+            return True
 
     # General objection/hesitant/unclear catch-all (stock questions, "WhatsApp
     # options weren't great", expensive, online_cheaper, trust_issue, anything else
