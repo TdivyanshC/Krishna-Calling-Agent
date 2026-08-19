@@ -1139,6 +1139,14 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
 
 _LLM_SAFE_FALLBACK = "एक सेकंड, मैं चेक करके बताती हूँ।"
 
+# Added 2026-08-19 -- see respond()'s asyncio.to_thread() wrapper around
+# state_machine() for the full context. llm_reply() can make up to 2
+# sequential blocking Groq calls (initial + one grounding retry on a
+# fabricated-price rejection), so this is deliberately looser than
+# webhook_reactivation.py's 4.0s _REACT_LLM_FALLBACK_HARD_TIMEOUT (that one
+# bounds a single classify+generate pair, never two full generates).
+_STATE_MACHINE_HARD_TIMEOUT = 7.0
+
 # Appended to the system prompt only on the retry after a grounding
 # rejection — the base prompt's "NEVER make up prices" instruction alone did
 # not stop the model (confirmed live: call 50845de5 fabricated "₹33,000" for
@@ -1165,7 +1173,33 @@ def _call_groq(text: str, session, call_uuid: str, context: str) -> str:
     return llm.choices[0].message.content.strip()
 
 
+# Added 2026-08-19 -- fresh-lead-flow audit, direct parallel to
+# webhook_reactivation.py's own confirmed-live finding: feeding a bare
+# low-content fragment ("और ये।" -- "and this", no real content word)
+# straight to a single generate-only LLM call got a fluent, confident-
+# SOUNDING answer hallucinated for something that was never a real
+# question -- that's WHY the reactivation engine's fallback was redesigned
+# into a classify-first pipeline. This flow's is_noise() (knowledge.py)
+# does NOT catch this shape -- confirmed directly: is_noise("और ये।") is
+# False, since neither word is in JUNK_WORDS, so it reaches llm_reply()
+# completely unguarded. Rather than building this flow's own classify step
+# (a bigger, separate architecture decision -- extra Groq round-trip, new
+# prompt to validate -- flagging that as a further option, not building it
+# unilaterally here), reuses the exact same _is_low_content_fragment() check
+# already proven in webhook_reactivation.py: short-circuits to a plain
+# reprompt line before any Groq call at all, cheaper and safer than trying
+# to generate an answer to something that isn't really a question.
+_LLM_LOW_CONTENT_REPROMPT = "माफ़ करना, ठीक से समझ नहीं पाई — फिर से बता दीजिए?"
+
+
 def llm_reply(text: str, session, call_uuid: str) -> tuple[str | None, str]:
+    from webhook_reactivation import _is_low_content_fragment
+    if _is_low_content_fragment(text):
+        logger.info(f"[{call_uuid}] low-content fragment '{text}' -- skipping LLM call entirely, using reprompt")
+        reply = _LLM_LOW_CONTENT_REPROMPT
+        session.conversation.append(("user", text))
+        session.conversation.append(("assistant", reply))
+        return reply, "fallback_low_content"
     try:
         base_context = build_llm_context()
         context = build_multilingual_llm_system_prompt(session, base_context)
@@ -1635,7 +1669,42 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
             else:
                 logger.info(f"[{call_uuid}] Hard rejection threshold hit ({session.hard_rejection_signals}) → graceful decline")
         else:
-            reply, source = state_machine(text_fixed, text, session, call_uuid)
+            # Added 2026-08-19 -- fresh-lead-flow audit found state_machine()
+            # (a plain sync function) was being called directly inside this
+            # async respond(), with no await/offload at all. Its llm_reply()
+            # path (webhook.py:1168) makes a BLOCKING call via the synchronous
+            # Groq() client (not AsyncGroq, which webhook_reactivation.py
+            # correctly uses) -- with no timeout set on that client either.
+            # Confirmed: this means any turn that falls through to the LLM
+            # (kb_response/get_direct_match/fuzzy IntentMatcher all miss)
+            # blocks the ENTIRE asyncio event loop for however long that one
+            # Groq round-trip takes, freezing audio processing for every OTHER
+            # concurrent call this process is handling, not just this one --
+            # a much worse failure mode than the per-call dead-air issue
+            # webhook_reactivation.py's own LLM fallback was hardened against
+            # (see _REACT_LLM_FALLBACK_HARD_TIMEOUT's docstring, a REAL
+            # confirmed 8.2s-dead-air incident on a single call there; this
+            # is the same risk but blocking every simultaneous call at once).
+            # Fixed by offloading to a worker thread via asyncio.to_thread()
+            # (doesn't require converting state_machine()/llm_reply()/
+            # _call_groq() to async -- a much larger, riskier refactor for a
+            # function this central) and adding an explicit outer timeout,
+            # matching the hard-ceiling discipline already established for
+            # the reactivation engine's own LLM fallback. On timeout the
+            # underlying thread isn't forcibly killed (Python can't do that)
+            # but the call itself degrades to the same safe fallback line
+            # llm_reply() already uses on any other failure -- no dead call,
+            # no indefinite hang either way.
+            try:
+                reply, source = await asyncio.wait_for(
+                    asyncio.to_thread(state_machine, text_fixed, text, session, call_uuid),
+                    timeout=_STATE_MACHINE_HARD_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(f"[{call_uuid}] state_machine() exceeded {_STATE_MACHINE_HARD_TIMEOUT}s hard ceiling (likely the LLM fallback) -- using safe fallback reply")
+                reply, source = _LLM_SAFE_FALLBACK, "fallback_llm_timeout"
+                session.conversation.append(("user", text))
+                session.conversation.append(("assistant", reply))
         if not reply:
             return
 
