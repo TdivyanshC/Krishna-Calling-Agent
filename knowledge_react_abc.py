@@ -874,11 +874,24 @@ REACT_ABC_INTENTS = {
             "dobara mat karna", "phir se mat karna", "aage se mat karna",
             "मेरा नंबर हटा दो", "नंबर हटा दो", "मेरा नंबर निकाल दो",
             "दोबारा मत करना", "फिर से मत करना", "आगे से मत करना"],
+    # "bot ho"/"bot ya insaan" added 2026-08-19 -- confirmed live, user
+    # actually said "tum bot ho AI ya insaan" (are you a bot, AI, or human).
+    # Two separate gaps in the same utterance: "bot ho" wasn't covered at
+    # all (only "robot ho" was), and "AI ho" requires that exact adjacent
+    # order, but the real phrasing was "...ho AI ya insaan" -- AI comes
+    # after "ho", reversed from the keyword. Added "bot ya insaan"/"AI ya
+    # insaan" to catch the "X or human" shape regardless of which word
+    # precedes "ho". Separately: STT itself mis-transcribed the actual
+    # audio as "तुम बहुत।" (unrelated words) on this same live call --
+    # that's a transcription-accuracy problem, not a keyword gap, and isn't
+    # fixed by this change; flagged, not silently implied as solved.
     "personal_question": ["tumhara naam", "kaun ho tum", "real hai ya bot",
-                          "robot ho", "AI ho", "human ho",
+                          "robot ho", "bot ho", "AI ho", "human ho",
+                          "bot ya insaan", "AI ya insaan", "bot ya human",
                           "are you a bot", "are you real", "are you human", "is this a bot",
                           "तुम्हारा नाम", "कौन हो तुम", "रियल है या बॉट",
-                          "रोबोट हो", "एआई हो", "ह्यूमन हो"],
+                          "रोबोट हो", "बॉट हो", "एआई हो", "ह्यूमन हो",
+                          "बॉट या इंसान", "एआई या इंसान"],
     # Three added 2026-08-13 -- all confirmed live this week as real customer
     # questions that matched nothing at all anywhere in this file.
     # "दाम"/"daam" (the native Hindi word for price/rate) and "kitne ka
