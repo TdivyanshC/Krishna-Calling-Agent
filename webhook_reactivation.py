@@ -983,6 +983,18 @@ def _tokenize(text: str) -> list[str]:
     # Hindi text already uses real whitespace between words (unlike e.g. Thai),
     # so splitting on whitespace never breaks a word internally — punctuation
     # only needs trimming from token edges, not stripped mid-token.
+    #
+    # Chandrabindu (ँ, U+0901) normalized to anusvara (ं, U+0902) 2026-08-19 --
+    # confirmed live: STT returned "बिज़ी हूँ" (chandrabindu) for a real "busy
+    # hoon" turn, but every "busy" keyword in this file spells it "हूं"
+    # (anusvara) -- 212 anusvara occurrences vs 5 chandrabindu across
+    # knowledge_react_abc.py, so normalizing toward anusvara here fixes the
+    # mismatch for every affected keyword at once (this file's whole nasal
+    # vocabulary: हूं/हैं/मैं/नहीं/वहां/कहां/...) instead of hunting down and
+    # duplicating each one individually. Applied to BOTH sides of every match
+    # automatically since _phrase_in_tokens() tokenizes the keyword through
+    # this same function.
+    text = text.replace("ँ", "ं")
     tokens = []
     for raw in text.lower().split():
         tok = raw.strip(_TOKEN_EDGE_PUNCT)

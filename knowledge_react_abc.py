@@ -659,13 +659,23 @@ REACT_ABC_INTENTS = {
     "privacy_concern": ["number kaise mila", "data kahan se", "mera number kyun hai", "spam", "privacy",
                        "how did you get my number", "who gave you my number",
                        "नंबर कैसे मिला", "डेटा कहां से", "मेरा नंबर क्यों है", "स्पैम", "प्राइवेसी"],
+    # "kitna discount milega" (how much discount will I get) added
+    # 2026-08-19 -- confirmed live (test call to 8799712556): this exact
+    # phrase matched ZERO keywords anywhere in the file and got the generic
+    # "didn't catch that" reprompt instead of an actual answer, despite
+    # ra_offer_explain existing specifically to answer it. Bare "discount"
+    # deliberately included (not just the full phrase) -- checked against
+    # this file's other keyword lists for collisions and found none; it's
+    # not a substring of any existing not_interested/busy/expensive phrase.
     "offer_clarify": ["kya offer", "kaise hoga", "explain karo", "samjhao",
                       "exchange kaise", "purana furniture", "kya matlab",
                       "detail batao", "aur batao", "एक्सचेंज कैसे", "exchange kaisa",
                       "explain", "tell me more", "more details", "more information",
                       "what's the offer", "what is the offer",
+                      "kitna discount", "discount kitna", "discount milega", "discount",
                       "क्या ऑफर", "कैसे होगा", "एक्सप्लेन करो", "समझाओ",
-                      "पुराना फर्नीचर", "क्या मतलब", "डिटेल बताओ", "और बताओ", "एक्सचेंज कैसा"],
+                      "पुराना फर्नीचर", "क्या मतलब", "डिटेल बताओ", "और बताओ", "एक्सचेंज कैसा",
+                      "कितना डिस्काउंट", "डिस्काउंट कितना", "डिस्काउंट मिलेगा", "डिस्काउंट"],
     # "भरोसा नहीं"/"bharosa nahi" and "यकीन नहीं"/"yakeen nahi" added
     # 2026-08-13 -- both are more common, everyday Hindi words for
     # "trust"/"belief" than "vishwas" (which is more formal/literary), and
