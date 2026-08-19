@@ -978,10 +978,21 @@ REACT_ABC_INTENTS = {
                        "kitni baar call karoge", "dobara kyun call kiya", "roz call karte ho",
                        "बार-बार कॉल क्यों करते हो", "आप पहले भी कॉल कर चुके हो",
                        "मैंने पहले बता दिया था", "कितनी बार कॉल करोगे", "रोज़ कॉल करते हो"],
+    # "baad mein call karo/karna" (no specific time) added 2026-08-19, per
+    # explicit product decision -- previously this generic phrasing only
+    # matched "busy" (which already has bare "baad mein" as a deferral
+    # keyword, correct for standalone use like "abhi nahi, baad mein baat
+    # karte hain"), so a customer explicitly asking to be called back got
+    # the generic WhatsApp-deflection busy reply instead of being asked what
+    # time works. See detect_intents()'s comment (webhook_reactivation.py)
+    # for how "busy" is suppressed when this more specific phrase is also
+    # present, so callback_later actually wins instead of being shadowed by
+    # busy's earlier position in route_objection()'s priority chain.
     "callback_later": ["shaam ko call karna", "kal subah call karo", "thodi der baad call karo",
                        "evening mein try karna", "2 ghante baad call karo", "weekend pe call karna",
+                       "baad mein call karo", "baad mein call karna",
                        "शाम को कॉल करना", "कल सुबह कॉल करो", "थोड़ी देर बाद कॉल करो",
-                       "2 घंटे बाद कॉल करो"],
+                       "2 घंटे बाद कॉल करो", "बाद में कॉल करो", "बाद में कॉल करना"],
     # Split 2026-08-18 into 3 directional intents -- was a single bucket
     # ("language_preference") that couldn't distinguish "switch me to
     # English" from "switch me to Hindi" from "I want Punjabi", which was

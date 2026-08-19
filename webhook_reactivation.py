@@ -1327,6 +1327,22 @@ def detect_intents(transcript: str) -> list[str]:
         matched.append("ask_price_range")
     if "ask_offer_scope" not in matched and _is_offer_scope_question(t):
         matched.append("ask_offer_scope")
+    # Added 2026-08-19, per explicit product decision: "baad mein call
+    # karo/karna" (call me later, no specific time) should be treated as an
+    # explicit callback request, not the generic "busy" deferral -- but
+    # "busy"'s own keyword list already has bare "baad mein" (correct for
+    # standalone use, e.g. "abhi nahi, baad mein baat karte hain"), so both
+    # intents match this exact phrase simultaneously. "busy" sits earlier in
+    # route_objection()'s priority chain (and several states already have
+    # their own native busy-handling that runs before route_objection() is
+    # even reached), so without this, callback_later's more specific signal
+    # would get silently shadowed no matter where it's positioned in that
+    # chain. Suppress "busy" here instead -- same idiom already used for
+    # not_interested vs busy/timing (_defer_to_not_interested in
+    # route_objection()), just resolved at detection time instead of dispatch
+    # time since "busy" isn't centrally dispatched the way those are.
+    if "callback_later" in matched and "busy" in matched:
+        matched.remove("busy")
     return matched
 
 
