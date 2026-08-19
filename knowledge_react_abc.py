@@ -817,9 +817,14 @@ REACT_ABC_INTENTS = {
                    "let me think", "need to think", "will think about it", "thinking about it",
                    "सोचना है", "सोच के बताता हूं", "वाइफ से पूछना",
                    "फैमिली से पूछना", "डिसाइड नहीं किया"],
+    # Bare "मैनेजर" added 2026-08-19 -- confirmed live: "मुझे किसी इंसान से
+    # बात कराओ, मैनेजर से।" put "मैनेजर" and "से" at the end, reversed from
+    # "मैनेजर से बात"'s fixed word order, so the existing phrase-match missed
+    # it -- bare "manager" (Latin) was already covered for exactly this
+    # reason, this just closes the same gap on the Devanagari side.
     "escalate": ["manager se baat", "senior se milao", "complaint karna",
                 "manager", "supervisor", "speak to someone else", "complaint",
-                "मैनेजर से बात", "सीनियर से मिलाओ", "कंप्लेंट करना"],
+                "मैनेजर से बात", "सीनियर से मिलाओ", "कंप्लेंट करना", "मैनेजर"],
     "dnc": ["dobara call mat karna", "number delete karo", "DNC", "harassment",
             "complaint karunga", "call mat karo kabhi", "band karo yeh call",
             "दोबारा कॉल मत करना", "नंबर डिलीट करो", "हैरेसमेंट",
@@ -984,13 +989,28 @@ REACT_ABC_INTENTS = {
     # "ईएमआई" spelling (long ई) alongside the existing "इएमआई" (short इ) --
     # both are real transliterations of the English loanword "EMI" and STT
     # returned the long-ई form live; only the short form was covered before.
+    #
+    # "EMI अवेलेबल है क्या" added 2026-08-19, SAME DAY, second test call --
+    # STT rendered this utterance with "EMI" kept in Latin script but the
+    # rest phonetically transliterated into Devanagari ("अवेलेबल है क्या"),
+    # a third distinct spelling of the exact same question neither of the
+    # two earlier fixes covered (one was all-Latin, one was all-Devanagari).
+    # Confirms this is a live, code-mixed-script transcription pattern, not
+    # a one-off -- Saaras doesn't consistently pick one script for a given
+    # loanword within a single utterance.
     "ask_emi": ["EMI hai kya", "EMI available", "EMI available hai", "EMI available hai kya",
                "installment mein le sakte hain", "no cost emi",
                "loan mil sakta hai kya", "financing available hai",
                "इएमआई है क्या", "ईएमआई है क्या", "ईएमआई अवेलेबल है क्या", "ईएमआई अवेलेबल",
+               "EMI अवेलेबल है क्या", "EMI अवेलेबल",
                "किश्तों में ले सकते हैं", "लोन मिल सकता है क्या"],
+    # "कैश एक्सेप्ट करते हो" added 2026-08-19 -- confirmed live: STT
+    # transliterated "accept" phonetically as "एक्सेप्ट" rather than using
+    # the more literal "लेते" (lete/take) already covered -- same word,
+    # different loanword-vs-native-verb choice, same root cause as the EMI
+    # spelling variants above.
     "ask_payment_method": ["cash accept karte ho", "card se le sakte hain", "upi chalega",
-                           "online payment hota hai kya",
+                           "online payment hota hai kya", "कैश एक्सेप्ट करते हो",
                            "कैश लेते हो क्या", "कार्ड से ले सकते हैं", "यूपीआई चलेगा क्या"],
     "ask_warranty": ["warranty kitne saal ki hai", "guarantee hai kya",
                      "kharab hone par kya hoga", "replacement milega kya",
@@ -1025,9 +1045,22 @@ REACT_ABC_INTENTS = {
                      "TRAI mein complaint karunga", "court mein le jaunga",
                      "कंज्यूमर कोर्ट जाऊंगा", "लीगल एक्शन लूंगा",
                      "ट्राई में कंप्लेंट करूंगा", "कोर्ट में ले जाऊंगा"],
+    # "ये कॉल रिकॉर्ड हो रही है क्या" added 2026-08-19 -- confirmed live,
+    # STT used the colloquial "ये" (ye) rather than the standard "यह" (yeh)
+    # already covered -- both mean "this", genuinely different words (not a
+    # diacritic variant like the chandrabindu/anusvara fix), so added
+    # directly here rather than a blanket normalization that could
+    # introduce new collisions elsewhere ("ye" also does duty for "these").
     "ask_call_recorded": ["yeh call record ho rahi hai kya", "is this call recorded",
-                          "यह कॉल रिकॉर्ड हो रही है क्या"],
+                          "यह कॉल रिकॉर्ड हो रही है क्या", "ये कॉल रिकॉर्ड हो रही है क्या"],
+    # "इंसान से बात कराओ" added 2026-08-19 -- confirmed live: "मुझे किसी
+    # इंसान से बात कराओ" used "कराओ" (karao/have-someone-do-it), a different
+    # verb conjugation from "करनी है" (karni hai/I-need-to-do-it) already
+    # covered -- same request, different grammar. Kept scoped to "इंसान से
+    # बात कराओ" (not bare "कराओ" alone, which would be far too generic and
+    # collide with unrelated causative-verb sentences).
     "want_human": ["mujhe insaan se baat karni hai", "real agent se baat karwao",
                    "human se connect karo",
-                   "मुझे इंसान से बात करनी है", "ह्यूमन से कनेक्ट करो", "असली आदमी से बात करवाओ"],
+                   "मुझे इंसान से बात करनी है", "ह्यूमन से कनेक्ट करो", "असली आदमी से बात करवाओ",
+                   "इंसान से बात कराओ"],
 }
