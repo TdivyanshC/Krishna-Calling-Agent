@@ -886,13 +886,26 @@ REACT_ABC_INTENTS = {
     # audio as "तुम बहुत।" (unrelated words) on this same live call --
     # that's a transcription-accuracy problem, not a keyword gap, and isn't
     # fixed by this change; flagged, not silently implied as solved.
+    # "तुम बहुत हो या इंसान" added 2026-08-19 -- NOT a keyword-coverage fix,
+    # a targeted workaround for a confirmed-reproducible STT mishearing.
+    # Saaras transcribed "tum bot ho ya insaan" as "तुम बहुत हो या इंसान"
+    # (substituting "बहुत"/very for "बॉट"/bot) on TWO separate live test
+    # calls the same day -- not random noise, a consistent mishearing of
+    # this specific word in this context. No keyword list can reach this
+    # via the word "bot" (it never appears in the transcript at all), so
+    # this is the literal garbled phrase added as-is. Deliberately NOT bare
+    # "बहुत" alone -- that's an extremely common, unrelated word ("very"/
+    # "much"); scoped to the full "तुम बहुत हो या इंसान" phrase, which is
+    # specific enough (तुम + इंसान together) to be safe even with "बहुत" in
+    # the middle. This is a compromise, not a real fix -- it papers over a
+    # transcription problem rather than solving it; flagged as such.
     "personal_question": ["tumhara naam", "kaun ho tum", "real hai ya bot",
                           "robot ho", "bot ho", "AI ho", "human ho",
                           "bot ya insaan", "AI ya insaan", "bot ya human",
                           "are you a bot", "are you real", "are you human", "is this a bot",
                           "तुम्हारा नाम", "कौन हो तुम", "रियल है या बॉट",
                           "रोबोट हो", "बॉट हो", "एआई हो", "ह्यूमन हो",
-                          "बॉट या इंसान", "एआई या इंसान"],
+                          "बॉट या इंसान", "एआई या इंसान", "तुम बहुत हो या इंसान"],
     # Three added 2026-08-13 -- all confirmed live this week as real customer
     # questions that matched nothing at all anywhere in this file.
     # "दाम"/"daam" (the native Hindi word for price/rate) and "kitne ka

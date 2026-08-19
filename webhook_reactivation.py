@@ -2315,6 +2315,22 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
             session.react_state = "WHATSAPP_CTA"
             await fire_whatsapp(session, call_uuid)
             return True
+        # Added 2026-08-19 -- confirmed live: a customer volunteering a
+        # date/time before being asked ("शाम को चार बजे") wasn't checked
+        # anywhere in this state's chain, so it silently fell all the way
+        # through to the generic {p}_hook_cta pitch at the bottom, which
+        # doesn't acknowledge the time at all -- a real reply-quality bug,
+        # not a keyword miss. Treated like buying_signal (strong positive
+        # engagement) rather than trying to book the date right here -- the
+        # date itself is NOT stored/reused; the customer will be asked again
+        # once APPOINTMENT state is reached, same as if they'd said nothing.
+        # Real early-date capture (skip the later re-ask) is a separate,
+        # bigger piece of work -- flagged, not attempted here.
+        if "appointment_confirm" in intents:
+            await play_keys(call_uuid, [f"{p}_offer_urgency", f"{p}_wa_cta"], session, log_transcript=[True, False])
+            session.react_state = "WHATSAPP_CTA"
+            await fire_whatsapp(session, call_uuid)
+            return True
         if "expensive" in intents:
             await play_keys(call_uuid, [f"{p}_obj_expensive", f"{p}_wa_cta"], session, log_transcript=[True, False])
             session.react_state = "WHATSAPP_CTA"
