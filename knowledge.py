@@ -397,11 +397,78 @@ DIRECT_KEYWORD_MAP: dict[str, str] = {
     "डेकोर":             "interior_design",
 }
 
+# Added 2026-08-19 -- fresh-lead-flow audit (same pass that hardened
+# webhook_reactivation.py's matcher earlier the same day). get_direct_match()
+# is pure substring matching with no negation awareness at all -- confirmed
+# live via direct testing: "warranty nahi chahiye" (I don't want the
+# warranty) still matched "warranty" -> warranty_quality and got the FAQ
+# pitch explaining warranty terms; "exchange nahi karna mujhe" (I don't want
+# to do the exchange) matched "exchange" -> exchange_offer and got the
+# exchange pitch. Same failure shape as the reactivation engine's
+# _is_explicit_optout()/windowed-matcher negation guard, just never built
+# here. Word-proximity (not "negation appears anywhere in the utterance") --
+# a genuine multi-topic turn like "sofa nahi bed chahiye, EMI hai kya" must
+# still match EMI correctly; only a negation sitting near THIS keyword
+# should suppress THIS match.
+_DIRECT_MATCH_NEGATION_WORDS = {"nahi", "nahin", "nhi", "mat", "na",
+                                 "नहीं", "नही", "ना", "मत"}
+_DIRECT_MATCH_NEGATION_WINDOW = 3
+# Same clause-boundary discipline as webhook_reactivation.py's
+# _is_explicit_optout() -- confirmed via testing here too: without splitting
+# on punctuation first, "sofa nahi bed chahiye, EMI hai kya" (I don't want a
+# sofa, I want a bed -- EMI available?) suppressed the correct EMI match,
+# because "nahi" from the earlier, unrelated clause fell inside EMI's word
+# window. Real STT transcripts don't always include the comma, so this is a
+# partial mitigation (same acknowledged limitation as _is_explicit_optout's
+# own docstring), not a complete fix -- narrows the false-suppression surface
+# without eliminating it.
+_DIRECT_MATCH_CLAUSE_SPLIT_RE = re.compile(r"[,।;.!?]+")
+
+# Added 2026-08-19, same audit pass -- get_direct_match() previously checked
+# `kw in text_lower` as a raw SUBSTRING of the whole string, with no word-
+# boundary awareness at all (unlike webhook_reactivation.py's _tokenize(),
+# which deliberately avoids \b/\w+ for Devanagari-virama reasons but still
+# enforces word boundaries via explicit split()-based tokens). Confirmed live
+# via direct testing: "main purana customer hoon" (I'm a returning customer)
+# matched the bare keyword "custom" -- sitting inside "customer" -- and
+# routed to the customization FAQ instead of acknowledging the customer
+# statement; "resale value kya hoga" matched "sale" inside "resale" and
+# routed to the discount-offer pitch instead of the actual resale/valuation
+# question. Fixed the same way as get_direct_match: pad both the keyword and
+# the transcript with a leading/trailing space and require the padded
+# keyword to appear as a substring of the padded, whitespace-tokenized
+# transcript -- this is exactly _phrase_in_tokens()'s own exact-match tier
+# in webhook_reactivation.py, reused here rather than reinvented.
+_TOKEN_EDGE_PUNCT = ".,!?;:'\"()[]{}—-–।॥*"
+
+
+def _tokenize_words(text: str) -> list[str]:
+    return [w.strip(_TOKEN_EDGE_PUNCT) for w in text.split() if w.strip(_TOKEN_EDGE_PUNCT)]
+
+
+def _is_negated_nearby(tokens: list[str], kw_tokens: list[str]) -> bool:
+    if not kw_tokens:
+        return False
+    kw_first = kw_tokens[0]
+    for i, tok in enumerate(tokens):
+        if tok == kw_first:
+            lo = max(0, i - _DIRECT_MATCH_NEGATION_WINDOW)
+            hi = min(len(tokens), i + _DIRECT_MATCH_NEGATION_WINDOW + 1)
+            if any(w in _DIRECT_MATCH_NEGATION_WORDS for w in tokens[lo:hi]):
+                return True
+    return False
+
+
 def get_direct_match(text: str) -> str | None:
     text_lower = text.lower()
     for kw in sorted(DIRECT_KEYWORD_MAP, key=len, reverse=True):
-        if kw in text_lower:
-            return DIRECT_KEYWORD_MAP[kw]
+        kw_tokens = kw.split()
+        boundary_kw = f" {' '.join(kw_tokens)} "
+        for clause in _DIRECT_MATCH_CLAUSE_SPLIT_RE.split(text_lower):
+            clause_tokens = _tokenize_words(clause)
+            boundary_clause = f" {' '.join(clause_tokens)} "
+            if boundary_kw in boundary_clause and not _is_negated_nearby(clause_tokens, kw_tokens):
+                return DIRECT_KEYWORD_MAP[kw]
     return None
 
 def is_product_query(text: str) -> bool:
