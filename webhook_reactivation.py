@@ -1076,6 +1076,13 @@ def _is_bare_negative(text: str) -> bool:
 
 _BRIDGING_FILLERS = {"bhi", "भी", "mein", "में", "hi", "ही", "toh", "तो"}
 
+# Used by _phrase_in_tokens()'s windowed-matching negation guard below --
+# deliberately a smaller set than _OPTOUT_NEGATION_WORDS/_BARE_NEGATIVE_WORDS
+# (no "no"/"nahin" alone) since this only needs to catch the single-token
+# "mat/nahi/not/don't immediately before the verb" shape, not the broader
+# opt-out-anywhere-nearby matching those other detectors do.
+_WINDOWED_NEGATION_WORDS = {"nahi", "nahin", "mat", "not", "don't", "dont", "ना", "नहीं", "मत"}
+
 
 # Categories excluded from _phrase_in_tokens()'s windowed (any-order,
 # negation-blind) fallback -- added 2026-08-19 after finding a real false
@@ -1140,9 +1147,43 @@ def _phrase_in_tokens(keyword: str, boundary_text: str, allow_windowed: bool = T
         boundary_tokens = boundary_text.split()
         kw_set = set(kw_tokens)
         window = len(kw_tokens) + 3
+        last_kw_token = kw_tokens[-1]
         for i in range(len(boundary_tokens)):
-            if kw_set.issubset(boundary_tokens[i:i + window]):
-                return True
+            window_tokens = boundary_tokens[i:i + window]
+            if not kw_set.issubset(window_tokens):
+                continue
+            # Negation guard -- added 2026-08-19 after a systematic sweep
+            # (user asked for a deeper pass on language-hallucination risk,
+            # which led to auditing every windowed-eligible category, not
+            # just the language ones): confirmed live, "appointment cancel
+            # MAT karo" (please DON'T cancel my appointment) matched
+            # "appointment cancel karo" anyway, because the windowed check
+            # only verifies all required tokens are present nearby -- it had
+            # no idea "mat" sitting right before the final token (usually
+            # the action verb in Hindi's SOV order) reverses the request.
+            # Same root cause as the lang_pref false positive fixed earlier
+            # today, but that fix excluded 3 whole categories from windowed
+            # matching -- category-by-category exclusion doesn't scale once
+            # the same bug shows up in cancel_appointment/
+            # reschedule_appointment/want_human/escalate too (all found in
+            # this same sweep), and blanket-excluding those would have
+            # thrown away the real reordering fix they needed (e.g.
+            # escalate's "मैनेजर से बात" reordering). Fixed at the
+            # mechanism instead: within whichever window matched, find
+            # every occurrence of the keyword's LAST token (its usual verb/
+            # action word) and reject the match only if EVERY occurrence is
+            # immediately preceded by a negation word -- a real match
+            # elsewhere in a longer, unrelated utterance still succeeds,
+            # only the genuinely-negated reading is blocked. Verified this
+            # rejects all 4 confirmed live false positives while leaving
+            # the non-negated escalate/want_human reordering fixes intact.
+            verb_positions = [j for j, tok in enumerate(window_tokens) if tok == last_kw_token]
+            if verb_positions and all(
+                j > 0 and window_tokens[j - 1] in _WINDOWED_NEGATION_WORDS
+                for j in verb_positions
+            ):
+                continue
+            return True
     return False
 
 
