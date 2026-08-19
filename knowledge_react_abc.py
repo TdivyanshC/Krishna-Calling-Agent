@@ -977,9 +977,18 @@ REACT_ABC_INTENTS = {
     "uncertain": ["pata nahi", "shayad", "dekhta hoon", "abhi nahi bol sakta",
                  "confirm nahi hai", "not sure",
                  "पता नहीं", "शायद", "देखता हूं", "अभी नहीं बोल सकता", "कन्फर्म नहीं है"],
-    "ask_emi": ["EMI hai kya", "installment mein le sakte hain", "no cost emi",
+    # "EMI available hai kya"/"EMI available hai" added 2026-08-19 -- confirmed
+    # live (test call to 8799712556): neither the Hindi nor the English
+    # phrasing of this exact natural question matched anything, 3 strikes in
+    # a row hit the not-understood cap and ended the call. Also added the
+    # "ईएमआई" spelling (long ई) alongside the existing "इएमआई" (short इ) --
+    # both are real transliterations of the English loanword "EMI" and STT
+    # returned the long-ई form live; only the short form was covered before.
+    "ask_emi": ["EMI hai kya", "EMI available", "EMI available hai", "EMI available hai kya",
+               "installment mein le sakte hain", "no cost emi",
                "loan mil sakta hai kya", "financing available hai",
-               "इएमआई है क्या", "किश्तों में ले सकते हैं", "लोन मिल सकता है क्या"],
+               "इएमआई है क्या", "ईएमआई है क्या", "ईएमआई अवेलेबल है क्या", "ईएमआई अवेलेबल",
+               "किश्तों में ले सकते हैं", "लोन मिल सकता है क्या"],
     "ask_payment_method": ["cash accept karte ho", "card se le sakte hain", "upi chalega",
                            "online payment hota hai kya",
                            "कैश लेते हो क्या", "कार्ड से ले सकते हैं", "यूपीआई चलेगा क्या"],
