@@ -11,7 +11,8 @@ import os
 import re
 import time
 import wave
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import httpx
 from groq import AsyncGroq
@@ -594,21 +595,28 @@ async def route_objection(
     #     answering (check_hard_rejection() already catches an explicit DNC/
     #     decline before route_objection() is even reached; this only guards
     #     against a softer not_interested still reaching this far).
-    #     Deliberately still doesn't SCHEDULE anything real -- no orchestrator
-    #     capability exists for that -- this only fixes the immediate "the
-    #     call is left after asking a question" bug. Real callback-time
-    #     capture/scheduling remains a separate, bigger piece of work.
+    #     UPDATED 2026-08-19 -- real callback-time scheduling MVP. Now tries
+    #     _parse_callback_time_bucket() (see that function's own comment) to
+    #     turn a small set of clear phrasings into an actual UTC datetime,
+    #     persisted via _mark_callback_requested() onto outbound_leads.
+    #     callback_requested_at (supabase_migration_callback_requested_at.sql)
+    #     -- outbound_orchestrator.py's get_due_callback_leads() polls that
+    #     column and actually fires the call when it comes due. Deliberately
+    #     switched the noted-vs-unclear line choice to key off the PARSER'S
+    #     success specifically, not the looser "does this look date-ish at
+    #     all" signal the original fix used -- obj_callback_time_noted_*
+    #     says "main usi samay call karne ki koshish karungi" (I'll try to
+    #     call at that time), which is only honest to say when a specific
+    #     time was actually captured and scheduled, not just recognized as
+    #     vaguely time-shaped.
     if getattr(session, "awaiting_callback_time", False):
         session.awaiting_callback_time = False
         if not _defer_to_not_interested:
             voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
-            _gave_a_time = (
-                "appointment_confirm" in intents
-                or _has_date_context_digit(transcript)
-                or _has_standalone_day_suffix(transcript)
-            )
-            if _gave_a_time:
+            _callback_at = _parse_callback_time_bucket(transcript)
+            if _callback_at is not None:
                 await play_key(call_uuid, f"obj_callback_time_noted_{voice}", session)
+                asyncio.create_task(_mark_callback_requested(session, call_uuid, _callback_at))
             else:
                 await play_key(call_uuid, f"obj_callback_time_unclear_{voice}", session)
             return False
@@ -1318,6 +1326,137 @@ def _phrase_in_tokens(keyword: str, boundary_text: str, allow_windowed: bool = T
                 continue
             return True
     return False
+
+
+# ── Callback-time scheduling MVP -- added 2026-08-19 ────────────────────────
+# Maps a small set of clear, unambiguous Hindi/Hinglish callback-time
+# phrasings to a concrete datetime, so a stated "kal subah call karna" can
+# actually be scheduled (see supabase_migration_callback_requested_at.sql +
+# outbound_orchestrator.py's get_due_callback_leads()) instead of only being
+# acknowledged verbally (obj_callback_time_noted_*, built earlier the same
+# day, which never persisted anywhere).
+#
+# Deliberately NOT general free-form time parsing -- explicit product
+# decision: a misread time fires a real call at the wrong moment for a real
+# customer, which is worse than the previous "doesn't schedule anything"
+# gap. Recognizes only the phrasings below; anything else returns None and
+# the existing honest obj_callback_time_unclear_* fallback is unchanged.
+IST = ZoneInfo("Asia/Kolkata")
+
+# Mirrors outbound_orchestrator.py's CALL_START_HOUR/CALL_END_HOUR_DEFAULT
+# (10:00-20:00 IST) -- kept as a local copy rather than importing that module
+# here, since webhook_reactivation.py doesn't otherwise depend on it and the
+# two processes run independently (this file only ever WRITES the computed
+# timestamp; the orchestrator is what reads and acts on it later).
+_CALLBACK_CALL_START_HOUR = 10
+_CALLBACK_CALL_END_HOUR = 20
+
+
+def _clamp_to_calling_window(dt_ist: datetime) -> datetime:
+    """Push a computed callback time into the 10:00-20:00 IST window. Before
+    the window -> same day at window-open. At/after the window -> next day
+    at window-open."""
+    if dt_ist.hour < _CALLBACK_CALL_START_HOUR:
+        return dt_ist.replace(hour=_CALLBACK_CALL_START_HOUR, minute=0, second=0, microsecond=0)
+    if dt_ist.hour >= _CALLBACK_CALL_END_HOUR:
+        return (dt_ist + timedelta(days=1)).replace(hour=_CALLBACK_CALL_START_HOUR, minute=0, second=0, microsecond=0)
+    return dt_ist
+
+
+# anchor word -> hour offset a bare "N baje" (o'clock) digit combines with,
+# e.g. "shaam 6 baje" -> (6 % 12) + 12 = 18:00. Only these 4 anchors (day-
+# part words already established elsewhere in this file's keyword lists) --
+# a bare digit with no anchor is NOT confidently AM/PM and falls through to
+# None (the honest "unclear" fallback), not a guess.
+_CALLBACK_TIME_ANCHOR_HOURS = {
+    "subah": 0, "सुबह": 0,
+    "dopeher": 12, "दोपहर": 12,
+    "shaam": 12, "शाम": 12,
+    "raat": 12, "रात": 12,
+}
+_CALLBACK_CLOCK_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:baje|बजे)\b")
+
+
+def _parse_callback_time_bucket(transcript: str, now: datetime | None = None) -> datetime | None:
+    """
+    Returns a concrete UTC datetime for a small set of clear callback-time
+    phrasings, or None if the transcript doesn't confidently match one.
+    `now` is injectable for testing (must be tz-aware); defaults to the
+    real current time.
+    """
+    now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+    tomorrow_ist = now_ist + timedelta(days=1)
+    tokens = _tokenize(transcript)
+    boundary_text = f" {' '.join(tokens)} "
+
+    # Most specific phrases first -- "kal subah"/"kal shaam" must not fall
+    # through to the bare "kal" bucket below.
+    if any(_phrase_in_tokens(p, boundary_text) for p in ("kal subah", "कल सुबह")):
+        target = tomorrow_ist.replace(hour=10, minute=30, second=0, microsecond=0)
+        return _clamp_to_calling_window(target).astimezone(timezone.utc)
+
+    if any(_phrase_in_tokens(p, boundary_text) for p in ("kal shaam", "कल शाम")):
+        target = tomorrow_ist.replace(hour=18, minute=0, second=0, microsecond=0)
+        return _clamp_to_calling_window(target).astimezone(timezone.utc)
+
+    if any(_phrase_in_tokens(p, boundary_text) for p in
+           ("aaj shaam", "shaam ko", "आज शाम", "शाम को")):
+        target = now_ist.replace(hour=18, minute=0, second=0, microsecond=0)
+        if target <= now_ist:
+            target += timedelta(days=1)
+        return _clamp_to_calling_window(target).astimezone(timezone.utc)
+
+    # Explicit clock time + an unambiguous day-part anchor word in the same
+    # utterance (e.g. "shaam 6 baje", "subah 10 baje").
+    m = _CALLBACK_CLOCK_TIME_RE.search(transcript.lower())
+    if m:
+        digit = int(m.group(1))
+        if 1 <= digit <= 12:
+            anchor_hour = next((h for a, h in _CALLBACK_TIME_ANCHOR_HOURS.items() if a in tokens), None)
+            if anchor_hour is not None:
+                hour24 = (digit % 12) + anchor_hour
+                target = now_ist.replace(hour=hour24, minute=0, second=0, microsecond=0)
+                if target <= now_ist:
+                    target += timedelta(days=1)
+                return _clamp_to_calling_window(target).astimezone(timezone.utc)
+
+    # Bare "kal" alone (no subah/shaam qualifier, already handled above) --
+    # unqualified-daytime default, a documented judgment call, not a guess
+    # at a specific hour the customer never stated.
+    if "kal" in tokens or "कल" in tokens:
+        target = tomorrow_ist.replace(hour=13, minute=0, second=0, microsecond=0)
+        return _clamp_to_calling_window(target).astimezone(timezone.utc)
+
+    return None
+
+
+async def _mark_callback_requested(session, call_uuid: str, callback_at_utc: datetime) -> None:
+    """
+    Persists the computed callback time onto outbound_leads.
+    callback_requested_at, matched by phone + tenant_id -- same pattern as
+    _mark_wa_sent() above. outbound_orchestrator.py's get_due_callback_leads()
+    polls this column and fires the actual call once it's due.
+    """
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
+        return
+    raw_phone = getattr(session, "customer_phone", "")
+    if not raw_phone:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.patch(
+                f"{SUPABASE_URL}/rest/v1/outbound_leads"
+                f"?phone=eq.{raw_phone.replace('+', '%2B')}&tenant_id=eq.{TENANT_ID}",
+                headers={
+                    "apikey":        SUPABASE_SERVICE_KEY,
+                    "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+                    "Content-Type":  "application/json",
+                },
+                json={"callback_requested_at": callback_at_utc.isoformat()},
+            )
+        logger.info(f"[{call_uuid}] outbound_lead → callback_requested_at={callback_at_utc.isoformat()} phone={raw_phone}")
+    except Exception as exc:
+        logger.error(f"[{call_uuid}] callback_requested_at persist error: {exc}")
 
 
 _OPTOUT_NEGATION_WORDS = {"मत", "ना", "नहीं", "mat", "na", "nahi", "nahin",

@@ -486,6 +486,56 @@ async def run_greeting_busy_playkeys_and_callback_checks():
 async def run_awaiting_callback_time_checks():
     print("\n--- Part 8: callback_later actually listens for the answer ---")
 
+    # Direct unit tests for _parse_callback_time_bucket() -- fixed `now` for
+    # determinism. now = 2026-08-19 14:00 IST (within the calling window).
+    from datetime import datetime as _dt, timezone as _tz
+    from zoneinfo import ZoneInfo as _ZI
+    _IST = _ZI("Asia/Kolkata")
+    _now = _dt(2026, 8, 19, 14, 0, tzinfo=_IST).astimezone(_tz.utc)
+
+    def _check_bucket(label, transcript, expected_ist_str):
+        result = wr._parse_callback_time_bucket(transcript, now=_now)
+        got = result.astimezone(_IST).strftime("%Y-%m-%d %H:%M") if result else None
+        ok = got == expected_ist_str
+        status = "PASS" if ok else "FAIL"
+        print(f"[{status}] {label:<70} got={got!r} expected={expected_ist_str!r}")
+        _results.append(ok)
+
+    _check_bucket("bucket: 'kal subah' -> tomorrow 10:30 IST", "kal subah call karna", "2026-08-20 10:30")
+    _check_bucket("bucket: 'कल सुबह' (Devanagari) -> tomorrow 10:30 IST", "कल सुबह कॉल करना", "2026-08-20 10:30")
+    _check_bucket("bucket: 'kal shaam' -> tomorrow 18:00 IST", "kal shaam call kar dena", "2026-08-20 18:00")
+    _check_bucket("bucket: 'aaj shaam' -> today 18:00 IST", "aaj shaam call karo", "2026-08-19 18:00")
+    _check_bucket("bucket: 'shaam ko' -> today 18:00 IST", "shaam ko call kar lena", "2026-08-19 18:00")
+    _check_bucket("bucket: 'shaam 6 baje' -> today 18:00 IST", "shaam 6 baje call karna", "2026-08-19 18:00")
+    _check_bucket("bucket: 'raat 9 baje' (21:00, past window) -> clamped to tomorrow 10:00", "raat 9 baje call karna", "2026-08-20 10:00")
+    _check_bucket("bucket: bare 'kal' -> tomorrow 13:00 IST (unqualified default)", "kal call karna", "2026-08-20 13:00")
+    _check_bucket("bucket: vague 'pata nahi' -> None (honest fallback)", "pata nahi abhi", None)
+    _check_bucket("bucket: bare digit with no anchor -> None, not a guess", "10 baje call karna", None)
+    _check_bucket("bucket: bare '2 ghante baad' -> None (no anchor)", "2 ghante baad call karo", None)
+
+    # Verify the DB write actually gets scheduled with the right timestamp
+    # when a bucket matches, and is NOT called when it doesn't.
+    _callback_writes = []
+
+    async def _fake_mark_callback_requested(session, call_uuid, callback_at_utc):
+        _callback_writes.append(callback_at_utc)
+
+    orig_mark = wr._mark_callback_requested
+    wr._mark_callback_requested = _fake_mark_callback_requested
+    try:
+        recorder = Recorder()
+        async with patched_wr(recorder):
+            s = make_session(campaign="react_a", call_cycle=None, react_state="GREETING")
+            await wr.handle_reactivation_turn(s, "aap mujhe baad mein call karna, main busy hoon", "test-call-uuid")
+            await wr.handle_reactivation_turn(s, "kal subah", "test-call-uuid")
+        await asyncio.sleep(0.05)  # let the fire-and-forget create_task() run
+    finally:
+        wr._mark_callback_requested = orig_mark
+    ok = len(_callback_writes) == 1
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'bucket match schedules exactly one _mark_callback_requested() call':<70} writes={_callback_writes!r}")
+    _results.append(ok)
+
     # Scenario 1: customer gives a time-like answer -> acknowledged honestly,
     # call ends -- and critically, appointment_confirmed must stay False.
     recorder = Recorder()

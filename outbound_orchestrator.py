@@ -299,6 +299,70 @@ async def get_due_fresh_leads(client: httpx.AsyncClient, slots: int, active_camp
     return r.json()
 
 
+async def get_due_callback_leads(client: httpx.AsyncClient, slots: int, active_campaign_ids: list[str]) -> list[dict]:
+    """
+    Added 2026-08-19 -- callback-time scheduling MVP. Fetches leads whose
+    callback_requested_at (webhook_reactivation.py's
+    _parse_callback_time_bucket(), persisted via _mark_callback_requested())
+    has come due. Highest priority in tick() -- a stated callback time is an
+    explicit promise made to a specific customer, a harder commitment than
+    "contact this new lead soon" (fresh_cta) or a generic retry cadence, so
+    it must not get starved by fresh_cta volume.
+
+    Filtered by active_campaign_ids like every other lane, for the same
+    reason every other lane is: campaign_id gets paused as a real compliance/
+    business lever elsewhere in this system, and a promised callback isn't
+    exempt from that -- if this ever needs to be a genuine "always honor the
+    promise regardless" guarantee, that's a deliberate policy decision to
+    revisit, not a default to assume silently here.
+
+    fire_call() reuses whatever campaign_type/product_interest/
+    answered_no_date_count the row already has, so the callback resumes in
+    the SAME campaign/cycle the original call was in -- nothing here forces
+    react_a or any other specific campaign.
+    """
+    if not active_campaign_ids:
+        return []
+
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    campaign_in = ",".join(active_campaign_ids)
+    url = (
+        f"{SUPABASE_URL}/rest/v1/outbound_leads"
+        f"?tenant_id=eq.{TENANT_ID}"
+        f"&callback_requested_at=not.is.null"
+        f"&callback_requested_at=lte.{now_iso}"
+        f"&status=in.(pending,unanswered,mid_answered)"
+        f"&dnc=eq.false"
+        f"&campaign_id=in.({campaign_in})"
+        f"&order=callback_requested_at.asc"
+        f"&limit={slots}"
+    )
+    r = await client.get(url, headers=sb_headers())
+    if r.status_code != 200:
+        log.error(f"get_due_callback_leads failed: {r.status_code} {r.text[:200]}")
+        return []
+    return r.json()
+
+
+async def _clear_callback_requested_at(client: httpx.AsyncClient, lead_id: str) -> None:
+    """
+    Clears callback_requested_at immediately after a dispatch ATTEMPT
+    (success or failure) so the same promise can never fire twice. A failed
+    dispatch still falls into the normal schedule_retry_or_dnc() cadence
+    afterward, same as any other lane's failure path -- it just isn't
+    retried specifically AT the originally-promised time again, which is
+    the correct behavior once that moment has passed.
+    """
+    try:
+        await client.patch(
+            f"{SUPABASE_URL}/rest/v1/outbound_leads?id=eq.{lead_id}",
+            headers=sb_headers(),
+            json={"callback_requested_at": None},
+        )
+    except Exception as e:
+        log.error(f"_clear_callback_requested_at failed for {lead_id}: {e}")
+
+
 async def get_due_walkin_followup_leads(client: httpx.AsyncClient, slots: int, active_campaign_ids: list[str]) -> list[dict]:
     """
     Fetch walkin_followup leads ready to call — same filter shape as
@@ -599,7 +663,9 @@ async def detect_and_schedule_fresh_leads(client: httpx.AsyncClient):
         # deliberately fast so the WhatsApp CTA a real call can trigger
         # (fire_whatsapp(), see webhook_reactivation.py) lands close to the
         # actual inquiry instead of hours later.
-        target_ist = created_dt_utc.astimezone(IST) + timedelta(minutes=20)
+        # Tightened to +15min 2026-08-19, explicit user request -- fire fresh
+        # leads within 15 minutes of landing, not 20.
+        target_ist = created_dt_utc.astimezone(IST) + timedelta(minutes=15)
 
         # This schedules a fresh_cta call specifically (see docstring) — use
         # fresh_cta's own 10-22 bound, not the tighter reactivation default.
@@ -1098,20 +1164,30 @@ async def tick(client: httpx.AsyncClient):
         log.info("No active campaigns — skipping lead selection this tick")
         return
 
-    # Priority order: fresh_cta leads (time-sensitive, just promoted from
-    # scheduled_actions) get first claim on available slots. Whatever's left
-    # over fills from the existing reactivation lanes — wa_decline-confirm
-    # first (as before), then the normal pickup/no-date cadence — unchanged
-    # from the prior merge behavior, just now bounded by remaining_slots
-    # instead of the full slots count.
+    # Priority order: callback_requested_at leads (an explicit promise made
+    # to a specific customer at a specific time -- added 2026-08-19) get
+    # first claim, ahead of even fresh_cta -- see get_due_callback_leads()'s
+    # own docstring for why. Then fresh_cta leads (time-sensitive, just
+    # promoted from scheduled_actions). Whatever's left over fills from the
+    # existing reactivation lanes — wa_decline-confirm first (as before),
+    # then the normal pickup/no-date cadence — unchanged from the prior
+    # merge behavior, just now bounded by remaining_slots instead of the
+    # full slots count.
     #
     # Each lane checks its OWN funnel's window rather than one blanket check
     # up top: fresh_cta is allowed till 22:00 IST, everything else (the
     # FUNNEL_TYPE-based lane and wa-decline confirms) is clamped to 20:00 —
     # a single shared gate previously stopped fresh_cta dialing at 20:00 too.
-    fresh_leads = await get_due_fresh_leads(client, slots, active_campaign_ids) if is_calling_window("fresh_cta") else []
+    # callback_requested_at leads use the plain default window (10-20) --
+    # webhook_reactivation.py's _clamp_to_calling_window() already keeps
+    # every stored timestamp inside that window at write time, so this is
+    # a defensive second check, not the primary guarantee.
+    callback_leads = await get_due_callback_leads(client, slots, active_campaign_ids) if is_calling_window() else []
 
-    remaining_slots = slots - len(fresh_leads)
+    remaining_slots = slots - len(callback_leads)
+    fresh_leads = await get_due_fresh_leads(client, remaining_slots, active_campaign_ids) if remaining_slots > 0 and is_calling_window("fresh_cta") else []
+
+    remaining_slots = remaining_slots - len(fresh_leads)
     due_leads     = []
     decline_leads = []
     if remaining_slots > 0 and is_calling_window(FUNNEL_TYPE):
@@ -1120,7 +1196,13 @@ async def tick(client: httpx.AsyncClient):
 
     seen  = set()
     leads = []
+    for lead in callback_leads:
+        seen.add(lead["id"])
+        lead["_callback"] = True
+        leads.append(lead)
     for lead in fresh_leads:
+        if lead["id"] in seen:
+            continue
         seen.add(lead["id"])
         lead["_fresh_cta"] = True
         leads.append(lead)
@@ -1169,6 +1251,15 @@ async def tick(client: httpx.AsyncClient):
             continue
 
         success = await fire_call(client, lead, wa_decline_confirm=is_decline_confirm)
+
+        if lead.get("_callback"):
+            # Clear the promise slot on ANY dispatch attempt (success or
+            # failure) so it can never fire twice for the same promise --
+            # see _clear_callback_requested_at()'s own docstring. A failed
+            # attempt still falls into the normal retry cadence below, just
+            # no longer tied to the originally-promised moment (which has
+            # now passed).
+            await _clear_callback_requested_at(client, lead_id)
 
         if not success:
             # /trigger-call or Vobiz rejected — schedule retry
