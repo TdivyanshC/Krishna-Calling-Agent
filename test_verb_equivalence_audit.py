@@ -41,6 +41,7 @@ from webhook_reactivation import detect_intents
 class Recorder:
     def __init__(self):
         self.played = []
+        self.calls = []  # (fn_name, keys) -- tracks whether play_key or play_keys was used
 
 
 def make_session(**overrides):
@@ -61,10 +62,12 @@ def make_session(**overrides):
 def patch_io(monkeypatch_target, recorder: Recorder):
     async def fake_play_key(call_uuid, key, session=None, log_transcript=True):
         recorder.played.append(key)
+        recorder.calls.append(("play_key", [key]))
         return True
 
     async def fake_play_keys(call_uuid, keys, session=None, log_transcript=True):
         recorder.played.extend(keys)
+        recorder.calls.append(("play_keys", list(keys)))
         return True
 
     async def fake_fire_whatsapp(session, call_uuid):
@@ -415,6 +418,59 @@ async def run_llm_fallback_coverage_checks():
     _results.append(ok)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Part 7: real test-call findings (2026-08-19) -- customer said "aap mujhe
+# thodi der mein call karna, abhi busy hoon" (call me in a while, I'm busy
+# right now). Two separate bugs in one turn:
+#   1. "thodi der mein call karna" ("mein" = in) didn't match callback_later
+#      (only "thodi der baad call karo", "baad" = after, was covered) --
+#      only "busy" matched, and GREETING's busy handling pushes forward into
+#      the offer pitch rather than actually honoring the callback request.
+#   2. GREETING's busy/sochna_hai acknowledgment used two SEPARATE
+#      play_key() calls (across react_a/b/c AND call2/call3) instead of one
+#      combined play_keys() call -- the exact interrupt/latency bug already
+#      fixed at every other two-line branch in this file, just missed here.
+#      Confirmed live: the two separate Vobiz Play API round-trips took
+#      2.43s and 4.99s back to back, and the second almost certainly
+#      interrupted the first before the customer heard it.
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def run_greeting_busy_playkeys_and_callback_checks():
+    print("\n--- Part 7: real-call findings -- callback_later coverage + GREETING play_keys() ---")
+
+    # Bug 1: the exact real transcript must now resolve to callback_later,
+    # not just busy, and must play the callback-time-ask reply.
+    recorder = Recorder()
+    async with patched_wr(recorder):
+        s = make_session(campaign="react_a", call_cycle=None, react_state="GREETING")
+        await wr.handle_reactivation_turn(s, "आप मुझे थोड़ी देर में कॉल करना, अभी बिज़ी हूँ।", "test-call-uuid")
+    ok = "obj_callback_later_generic_ritu" in recorder.played
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'real transcript (\"thodi der mein\") now resolves to callback_later, not just busy':<85} played={recorder.played!r}")
+    _results.append(ok)
+
+    # Bug 2: GREETING busy/sochna_hai must issue ONE combined play_keys()
+    # call, never two separate play_key() calls -- across all 3 flows.
+    for label, coro_fn, sess_kwargs in (
+        ("react_a GREETING sochna_hai", wr.handle_reactivation_turn,
+         dict(campaign="react_a", call_cycle=None, react_state="GREETING")),
+        ("call2 GREETING sochna_hai", wr.handle_call2_turn,
+         dict(campaign="react_a", call_cycle="2", c2_state="GREETING")),
+        ("call3 GREETING sochna_hai", wr.handle_call3_turn,
+         dict(campaign="react_a", call_cycle="3", c3_state="GREETING")),
+    ):
+        recorder = Recorder()
+        async with patched_wr(recorder):
+            s = make_session(**sess_kwargs)
+            await coro_fn(s, "sochna hai abhi", "test-call-uuid")
+        combined_calls = [c for c in recorder.calls if c[0] == "play_keys" and len(c[1]) == 2]
+        separate_calls = [c for c in recorder.calls if c[0] == "play_key"]
+        ok = bool(combined_calls) and not separate_calls
+        status = "PASS" if ok else "FAIL"
+        print(f"[{status}] {label + ': one combined play_keys() call, not two separate play_key() calls':<85} calls={recorder.calls!r}")
+        _results.append(ok)
+
+
 async def main():
     print("--- Part 1: verb-form-alias axis coverage ---")
     for label, transcript, expected in INTENT_AXIS_CASES:
@@ -432,6 +488,7 @@ async def main():
     await run_end_to_end_reply_checks()
     await run_keyword_md_merge_checks()
     await run_llm_fallback_coverage_checks()
+    await run_greeting_busy_playkeys_and_callback_checks()
 
     passed = sum(_results)
     total = len(_results)

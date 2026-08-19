@@ -769,18 +769,33 @@ async def route_objection(
             prefix in ("ra", "rb", "rc")
             or (prefix in ("c2", "c3") and "sochna_hai" in intents)
         ):
+            # Fixed 2026-08-19 -- confirmed live on a real test call: two
+            # SEPARATE play_key() calls here let the second interrupt the
+            # first before it finished playing (the customer heard
+            # obj_timing_greet_generic cut off mid-sentence by the offer
+            # pitch), and each separate Vobiz Play API round-trip added its
+            # own latency on top (2.43s + 4.99s back-to-back in the
+            # confirmed call, vs one combined request) -- the exact same
+            # interrupt/latency bug already found and fixed at every OTHER
+            # two-line branch in this file via play_keys() (see e.g.
+            # WHATSAPP_CTA's qa_keys handling, PRESENT_OFFER's sochna_hai
+            # branch below), just missed at this one call site. Combined
+            # into one native multi-URL Vobiz sequence like everywhere else.
             voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
-            await play_key(call_uuid, f"obj_timing_greet_generic_{voice}", session)
+            _first_key = f"obj_timing_greet_generic_{voice}"
             if prefix in ("ra", "rb", "rc"):
                 session.react_state = "PRESENT_OFFER"
                 asyncio.create_task(fire_whatsapp(session, call_uuid))
-                await play_key(call_uuid, f"{prefix}_offer_main", session, log_transcript=False)
+                await play_keys(call_uuid, [_first_key, f"{prefix}_offer_main"], session,
+                                 log_transcript=[True, False])
             elif prefix == "c2":
                 session.c2_state = "WA_CHECK"
-                await play_key(call_uuid, "c2_wa_check", session, log_transcript=False)
+                await play_keys(call_uuid, [_first_key, "c2_wa_check"], session,
+                                 log_transcript=[True, False])
             elif prefix == "c3":
                 session.c3_state = "DECISION_DATE"
-                await play_key(call_uuid, "c3_decision_date", session, log_transcript=False)
+                await play_keys(call_uuid, [_first_key, "c3_decision_date"], session,
+                                 log_transcript=[True, False])
             return True
         # Call2 WA_CHECK gap: single-play, self-contained (asks for a date
         # itself, same shape as its own invite_seen/invite_resend siblings --

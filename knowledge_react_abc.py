@@ -1082,7 +1082,16 @@ REACT_ABC_INTENTS = {
                        "रोज़ रोज़ कॉल आती है", "हर दिन कॉल करते हो",
                        "यू कीप कॉलिंग अगेन एंड अगेन", "दिस इज़ द थर्ड टाइम",
                        "व्हाई डू यू कॉल एवरी डे"],
+    # "thodi der mein call karna" ("mein" = in, vs "baad" = after) added
+    # 2026-08-19 -- confirmed live (test call to 8799712556): the customer's
+    # actual wording, "aap mujhe thodi der mein call karna, abhi busy hoon,"
+    # only matched "busy" (from "abhi busy hoon"), not callback_later --
+    # "thodi der baad call karo" was already covered, but "mein" is a
+    # genuinely different preposition ("in a while" vs "after a while"),
+    # not a spelling variant, so it needed its own entry.
     "callback_later": ["shaam ko call karna", "kal subah call karo", "thodi der baad call karo",
+                       "thodi der mein call karo", "thodi der mein call karna",
+                       "थोड़ी देर में कॉल करो", "थोड़ी देर में कॉल करना",
                        "evening mein try karna", "2 ghante baad call karo", "weekend pe call karna",
                        "baad mein call karo", "baad mein call karna", "baad mein call kar sakte hain",
                        "can you call me back", "could you call me back", "call me back",
