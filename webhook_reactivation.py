@@ -1649,7 +1649,15 @@ def _pick_llm_filler_key(t: str, voice: str) -> str:
 async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
     """Fire-and-forget: plays a topic-matched filler immediately."""
     key = _pick_llm_filler_key(t, voice)
-    url = _static_url(key)
+    # Was hardcoded to lang="hi" (via _static_url()'s default) regardless of
+    # session.lang -- confirmed live 2026-08-19: an English-speaking caller
+    # whose question fell through to the LLM-fallback path heard a Hindi
+    # filler ("Ek second ji, dekhti hoon...") mid-English-conversation,
+    # twice in one call. SHARED_SCRIPT_EN already has English audio cached
+    # for every one of these keys (generated 2026-08-18), so this was just a
+    # missed lang= plumb-through, not missing content.
+    lang = "en" if getattr(session, "lang", "hi") == "en" else "hi"
+    url = _static_url(key, lang)
     if not url:
         return
     _turn = getattr(session, "turn_idx", None) if session else None

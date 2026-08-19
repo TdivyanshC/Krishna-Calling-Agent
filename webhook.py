@@ -1359,15 +1359,44 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         # utterance is long enough (>=5 words) that a coherent hallucination
         # is unlikely -- both real misfires were 3-word fragments. Below
         # that length, require detect_lang() to independently agree.
-        # Verified against all 4 real transcripts from the test call plus
-        # the "please speak in english" explicit-request phrasing (4 words,
-        # short, but detect_lang() agrees) before shipping.
+        #
+        # That fix stopped FALSE English signals from flipping the call, but
+        # confirmed live 2026-08-19 (same test session, next call) it never
+        # added the other half -- real hysteresis, so an already-established
+        # English conversation doesn't get abandoned over one ambiguous
+        # turn. "Yeah, don't say." (English, but only 3 words and none of
+        # them in detect_lang()'s keyword list) and a second STT misfire
+        # (auto-detect hallucinated Odia script, "ହଁ", from background
+        # noise) both landed on detect_lang()'s "hinglish" default -- which
+        # this code then mapped straight to "hi" and flipped an actively
+        # ongoing 4-turn English conversation back to Hindi mid-call. Twice.
+        # The caller heard: English reply -> Hindi filler -> English reply
+        # -> Hindi filler -> call closed in Hindi despite speaking English
+        # the entire time.
+        #
+        # "hinglish" from detect_lang() is deliberately its safe-default
+        # bucket for short/unclear text (see that function's own comments),
+        # not a real "this is Hindi" signal -- it was never meant to be
+        # trusted as one. Now only two things actively CHANGE session.lang:
+        # a confident English signal (unchanged from above) or text_lang
+        # actually being "hi" (real Devanagari script, a genuine positive
+        # Hindi signal -- Saaras only produces this by actually transcribing
+        # Hindi audio, so it doesn't have the same "default bucket" problem
+        # "hinglish" has). Anything else (ambiguous short text, an
+        # unexpected/misfired stt_lang, garbled foreign-script noise) no
+        # longer touches session.lang at all -- the call just keeps
+        # whatever language it was already using. Verified against every
+        # real transcript from both test calls (the original 2 misfires
+        # this fix doesn't regress, plus these 2 new ones) before shipping.
         if text and len(text.strip()) >= 2:
             text_lang = detect_lang(text)
-            if stt_lang == "en-IN":
-                turn_lang = "en" if (len(text.split()) >= 5 or text_lang == "en") else text_lang
+            current_lang = getattr(session, "lang", "hinglish")
+            if stt_lang == "en-IN" and (len(text.split()) >= 5 or text_lang == "en"):
+                turn_lang = "en"
+            elif text_lang == "hi":
+                turn_lang = "hi"
             else:
-                turn_lang = text_lang
+                turn_lang = current_lang  # ambiguous/weak signal -- don't flip
             if not hasattr(session, "lang_streak"):
                 session.lang = turn_lang
                 session.lang_streak = 1

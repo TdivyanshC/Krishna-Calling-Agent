@@ -533,6 +533,7 @@ SHARED_INTENTS = {
                      "pata batao", "pata kya hai", "aapka pata", "store ka pata",
                      "address", "location", "nazdik", "nearest",
                      "where is your showroom", "where is your store", "where are you located",
+                     "where is the showroom", "where is the store",
                      "कहां है", "कहाँ है", "शोरूम कहां", "लोकेशन क्या", "एड्रेस बताओ",
                      "कहां पर है", "कहाँ पर है", "स्टोर कहां", "स्टोर कहाँ", "कौनसी जगह",
                      "दुकान कहां", "shop kahan", "store kahan", "showroom kaha",
@@ -978,9 +979,19 @@ REACT_ABC_INTENTS = {
     # miscategorized in the old single bucket too -- both signal "move AWAY
     # from Hindi", i.e. the same direction as lang_pref_english, not a
     # request FOR Hindi.
+    # "speak to me in english" added 2026-08-19 -- confirmed live: "Can you
+    # please speak to me in English?" matched nothing, because "to me" sits
+    # between "speak" and "in" -- the existing "please speak in english"/
+    # "speak in english" keywords need those tokens adjacent, and the
+    # 2-token bridging-word fallback (_phrase_in_tokens) doesn't cover a
+    # 2-word insertion or apply to phrases this long. Added the literal
+    # "speak to me in english" phrase directly since generalizing the
+    # bridging mechanism risks new collisions across every other keyword
+    # in this file.
     "lang_pref_english": ["english mein baat karo", "angrezi mein bolo",
                           "please speak in english", "can you speak english",
-                          "speak in english", "english mein bolo", "english please",
+                          "speak in english", "speak to me in english",
+                          "english mein bolo", "english please",
                           "mujhe hindi samajh nahi aati", "hindi thik se nahi aati",
                           "hindi samajh nahi aati",
                           "अंग्रेज़ी में बोलो", "इंग्लिश में बात करो", "इंग्लिश में बोलो",
