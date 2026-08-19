@@ -637,12 +637,18 @@ async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> 
             body = r.json()
             text = body.get("transcript", "").strip()
             stt_lang = body.get("language_code")
+            # Not used as a hard gate yet (see webhook.py's language-tracking
+            # block, right after this function is called, for the word-count
+            # heuristic that replaced an earlier attempt at this) -- logged
+            # so a real misfire can be inspected after the fact and this
+            # threshold revisited with actual numbers instead of guessing.
+            stt_lang_prob = body.get("language_probability")
             if not text:
                 logger.info(f"[{call_uuid}] Saaras: empty transcript")
-                audit_event(call_uuid, "stt", turn=turn, text="", lang=stt_lang or "unknown", empty=True, duration_ms=_duration_ms)
+                audit_event(call_uuid, "stt", turn=turn, text="", lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=True, duration_ms=_duration_ms)
                 return "", stt_lang
-            logger.info(f"[{call_uuid}] STT [{stt_lang}] → '{text}'")
-            audit_event(call_uuid, "stt", turn=turn, text=text, lang=stt_lang or "unknown", empty=False, duration_ms=_duration_ms)
+            logger.info(f"[{call_uuid}] STT [{stt_lang} p={stt_lang_prob}] → '{text}'")
+            audit_event(call_uuid, "stt", turn=turn, text=text, lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=False, duration_ms=_duration_ms)
             return text, stt_lang
         else:
             logger.error(f"[{call_uuid}] Saaras STT {r.status_code}: {r.text[:200]}")
@@ -1328,16 +1334,40 @@ async def respond(ws: WebSocket, session: CallSession, audio: bytes, call_uuid: 
         # session.lang the same way state_machine() always has. Guarded on
         # non-trivial text so a silent/empty turn doesn't reset the streak.
         #
-        # Prefer Sarvam's own stt_lang for the "en-IN" case -- see
-        # transcribe()'s docstring: with language_code="unknown", Saaras
-        # correctly transcribes English speech AS English text and tags it
-        # en-IN, whereas the old hardcoded "hi-IN" forced English speech into
-        # phonetic Devanagari transcription that detect_lang()'s script-ratio
-        # check would misread as Hindi. For every other case (hi-IN, or no
-        # tag at all) detect_lang() still does the finer hi-vs-hinglish call
-        # Sarvam's STT-level tag doesn't distinguish.
+        # stt_lang=="en-IN" trusted outright at first (see transcribe()'s
+        # docstring for why: auto-detect fixed hi-IN-forced phonetic-
+        # Devanagari garbling of real English speech). Confirmed live
+        # 2026-08-19 (real test call) that Sarvam's own auto-detect can ALSO
+        # misfire on short/noisy audio -- it hallucinated the transcript
+        # "in South America" from what was almost certainly Hindi/Hinglish
+        # speech, and separately tagged the 3-word "Cash ya card" as en-IN.
+        # Both flipped session.lang to English off a single bad tag with no
+        # confirming signal -- the flip-flopping the user then heard live.
+        #
+        # First fix attempt (requiring detect_lang() to independently agree
+        # before trusting "en") was ALSO wrong the other way: it correctly
+        # rejected both misfires, but also rejected genuine long English
+        # sentences like "Upgrading your home furniture has become really
+        # simple..." -- detect_lang()'s ENGLISH_STRONG_WORDS list is a small,
+        # domain-flavored set (delivery/price/furniture/...), not a general
+        # English-word list, so ordinary sentences routinely score under its
+        # 0.20 threshold and get read as "hinglish" even though they're 100%
+        # English. Requiring strict agreement would have silently broken
+        # detection for exactly the callers the bilingual system exists for.
+        #
+        # Current rule: trust stt_lang=="en-IN" on its own once the
+        # utterance is long enough (>=5 words) that a coherent hallucination
+        # is unlikely -- both real misfires were 3-word fragments. Below
+        # that length, require detect_lang() to independently agree.
+        # Verified against all 4 real transcripts from the test call plus
+        # the "please speak in english" explicit-request phrasing (4 words,
+        # short, but detect_lang() agrees) before shipping.
         if text and len(text.strip()) >= 2:
-            turn_lang = "en" if stt_lang == "en-IN" else detect_lang(text)
+            text_lang = detect_lang(text)
+            if stt_lang == "en-IN":
+                turn_lang = "en" if (len(text.split()) >= 5 or text_lang == "en") else text_lang
+            else:
+                turn_lang = text_lang
             if not hasattr(session, "lang_streak"):
                 session.lang = turn_lang
                 session.lang_streak = 1
