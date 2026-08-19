@@ -996,12 +996,22 @@ REACT_ABC_INTENTS = {
     # was Hindi/Hinglish only. "call me back" is arguably the single most
     # natural English phrasing for this entire intent and was missing
     # outright, not just an edge-case variant.
+    # "baad mein call kar sakte hain" added 2026-08-19 -- confirmed from
+    # PRATHAM'S ACTUAL CALL RECORDING: "kya aap mujhe baad mein call kar
+    # sakte hain?" (can you call me back later?), the polite question form
+    # ("kar sakte hain" = can you), not the imperative form ("karo"/"karna")
+    # already covered above. This is arguably the MORE common, more natural
+    # way to actually ask this -- a direct command ("call karo") reads as
+    # brusque, "kar sakte hain" is how a real customer politely asks. Same
+    # busy-suppression as the imperative forms applies (see
+    # detect_intents()'s comment) since "baad mein" alone still matches busy.
     "callback_later": ["shaam ko call karna", "kal subah call karo", "thodi der baad call karo",
                        "evening mein try karna", "2 ghante baad call karo", "weekend pe call karna",
-                       "baad mein call karo", "baad mein call karna",
+                       "baad mein call karo", "baad mein call karna", "baad mein call kar sakte hain",
                        "can you call me back", "could you call me back", "call me back",
                        "will you call me back", "please call me back", "call me back later",
                        "call back later", "can you call back", "please call back later",
+                       "बाद में कॉल कर सकते हैं",
                        "शाम को कॉल करना", "कल सुबह कॉल करो", "थोड़ी देर बाद कॉल करो",
                        "2 घंटे बाद कॉल करो", "बाद में कॉल करो", "बाद में कॉल करना"],
     # Split 2026-08-18 into 3 directional intents -- was a single bucket
