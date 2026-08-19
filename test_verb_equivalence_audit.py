@@ -31,6 +31,7 @@ Usage:
     python3 test_verb_equivalence_audit.py
 """
 import asyncio
+import contextlib
 from types import SimpleNamespace
 
 import webhook_reactivation as wr
@@ -95,19 +96,39 @@ def check_intent(label, transcript, expected_intent, forbidden_intents=()):
     return ok
 
 
+@contextlib.asynccontextmanager
+async def patched_wr(recorder: Recorder, llm_reply=None):
+    """Single save/restore point for every wr.* attribute a test might mock
+    (play_key/play_keys/fire_whatsapp/_fire_immediate_dnc/play_dynamic_text,
+    optionally llm_fallback_reply too) -- added 2026-08-19 during a code
+    review after finding this save/restore boilerplate duplicated across
+    check_reply() and 3 separate blocks in
+    run_llm_fallback_coverage_checks(), the exact kind of duplication that
+    already caused a real bug earlier this session (play_dynamic_text was
+    left unmocked in one of those blocks, silently making the fallback path
+    look like it always failed under test). One helper now, used everywhere.
+    """
+    orig = {
+        "play_key": wr.play_key, "play_keys": wr.play_keys,
+        "fire_whatsapp": wr.fire_whatsapp, "_fire_immediate_dnc": wr._fire_immediate_dnc,
+        "play_dynamic_text": wr.play_dynamic_text,
+    }
+    if llm_reply is not None:
+        orig["llm_fallback_reply"] = wr.llm_fallback_reply
+    patch_io(wr, recorder)
+    if llm_reply is not None:
+        wr.llm_fallback_reply = llm_reply
+    try:
+        yield recorder
+    finally:
+        for name, fn in orig.items():
+            setattr(wr, name, fn)
+
+
 async def check_reply(label, coro_fn, session, transcript, expected_key):
     recorder = Recorder()
-    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn = (
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc, wr.play_dynamic_text
-    )
-    patch_io(wr, recorder)
-    try:
+    async with patched_wr(recorder):
         await coro_fn(session, transcript, "test-call-uuid")
-    finally:
-        wr.play_dynamic_text = orig_dyn
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
-            orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
-        )
     ok = expected_key in recorder.played
     status = "PASS" if ok else "FAIL"
     print(f"[{status}] {label:<70} played={recorder.played!r}")
@@ -321,14 +342,12 @@ async def run_keyword_md_merge_checks():
 # something that was never a question.
 # ═══════════════════════════════════════════════════════════════════════════
 
+async def _fake_llm_fallback_reply(t, call_uuid, facts=None):
+    return "MOCKED_LLM_ANSWER"
+
+
 async def run_llm_fallback_coverage_checks():
     print("\n--- Part 6: LLM-fallback coverage extension (call2/call3) ---")
-
-    async def _fake_llm_fallback_reply(t, call_uuid, facts=None):
-        return "MOCKED_LLM_ANSWER"
-
-    def _patch_llm(target):
-        target.llm_fallback_reply = _fake_llm_fallback_reply
 
     # fresh_cta was the one flow with ZERO LLM-fallback coverage at all.
     # Verified separately (not via the generic cases list below) because it
@@ -343,21 +362,9 @@ async def run_llm_fallback_coverage_checks():
         return "FRESH_CTA_MOCKED_ANSWER"
 
     recorder = Recorder()
-    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
-        wr.play_dynamic_text, wr.llm_fallback_reply
-    )
-    patch_io(wr, recorder)
-    wr.llm_fallback_reply = _fake_llm_fallback_reply_capturing
-    try:
+    async with patched_wr(recorder, llm_reply=_fake_llm_fallback_reply_capturing):
         s = make_session(campaign="fresh_cta", call_cycle=None, react_state="APPOINTMENT", fresh_product="sofa")
         await wr.handle_fresh_cta_turn(s, "sofa ki delivery kitne din mein hogi", "test-call-uuid")
-    finally:
-        wr.llm_fallback_reply = orig_llm
-        wr.play_dynamic_text = orig_dyn
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
-            orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
-        )
     ok = ("FRESH_CTA_MOCKED_ANSWER" in recorder.played
           and captured.get("facts") is wr._FRESH_LLM_FACTS)
     status = "PASS" if ok else "FAIL"
@@ -386,21 +393,9 @@ async def run_llm_fallback_coverage_checks():
     ]
     for label, coro_fn, sess_kwargs, transcript in cases:
         recorder = Recorder()
-        orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
-            wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
-            wr.play_dynamic_text, wr.llm_fallback_reply
-        )
-        patch_io(wr, recorder)
-        _patch_llm(wr)
-        try:
+        async with patched_wr(recorder, llm_reply=_fake_llm_fallback_reply):
             s = make_session(**sess_kwargs)
             await coro_fn(s, transcript, "test-call-uuid")
-        finally:
-            wr.llm_fallback_reply = orig_llm
-            wr.play_dynamic_text = orig_dyn
-            wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
-                orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
-            )
         ok = "MOCKED_LLM_ANSWER" in recorder.played
         status = "PASS" if ok else "FAIL"
         print(f"[{status}] {label:<85} played={recorder.played!r}")
@@ -411,21 +406,9 @@ async def run_llm_fallback_coverage_checks():
     # while building the fix above (a naive "not intents" widening would have
     # fired the slow LLM path on every bare "yes/ok" reply too).
     recorder = Recorder()
-    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
-        wr.play_dynamic_text, wr.llm_fallback_reply
-    )
-    patch_io(wr, recorder)
-    _patch_llm(wr)
-    try:
+    async with patched_wr(recorder, llm_reply=_fake_llm_fallback_reply):
         s = make_session(campaign="react_a", call_cycle="2", c2_state="DATE_ASK")
         await wr.handle_call2_turn(s, "haan theek hai", "test-call-uuid")
-    finally:
-        wr.llm_fallback_reply = orig_llm
-        wr.play_dynamic_text = orig_dyn
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
-            orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
-        )
     ok = "MOCKED_LLM_ANSWER" not in recorder.played
     status = "PASS" if ok else "FAIL"
     print(f"[{status}] {'bare acknowledgment must NOT trigger the LLM fallback':<85} played={recorder.played!r}")
