@@ -1077,7 +1077,26 @@ def _is_bare_negative(text: str) -> bool:
 _BRIDGING_FILLERS = {"bhi", "भी", "mein", "में", "hi", "ही", "toh", "तो"}
 
 
-def _phrase_in_tokens(keyword: str, boundary_text: str) -> bool:
+# Categories excluded from _phrase_in_tokens()'s windowed (any-order,
+# negation-blind) fallback -- added 2026-08-19 after finding a real false
+# positive: "hindi ke bare mein baat mat karo abhi" ("don't talk about
+# Hindi right now") matched lang_pref_hindi's "hindi mein baat karo",
+# because the windowed check just requires all 4 tokens present nearby, in
+# any order, with no awareness that "mat" sitting right before "karo"
+# REVERSES the meaning. Every other windowed-eligible category just plays
+# an acknowledgment line if mis-triggered -- low-consequence even when
+# wrong. These three are uniquely dangerous to false-positive on: they
+# instantly flip session.lang for the rest of the call with no further
+# confirmation step (see webhook.py's language-tracking block). Scoped
+# narrowly to just these three rather than teaching the windowed fallback
+# about negation generally, which would need to reason about every
+# possible negation word/position for every one of the ~40 other 3+-token
+# keyword phrases in this file -- not worth the added complexity for
+# categories where a false match just plays a low-stakes acknowledgment.
+_WINDOWED_MATCH_EXCLUDED_INTENTS = {"lang_pref_english", "lang_pref_hindi", "lang_pref_other"}
+
+
+def _phrase_in_tokens(keyword: str, boundary_text: str, allow_windowed: bool = True) -> bool:
     kw_tokens = _tokenize(keyword)
     if not kw_tokens:
         return False
@@ -1117,7 +1136,7 @@ def _phrase_in_tokens(keyword: str, boundary_text: str) -> bool:
     # simultaneous constraints. Bounded window (not "anywhere in the
     # utterance") keeps it from matching across unrelated clauses in a long,
     # multi-topic sentence.
-    if len(kw_tokens) >= 3:
+    if len(kw_tokens) >= 3 and allow_windowed:
         boundary_tokens = boundary_text.split()
         kw_set = set(kw_tokens)
         window = len(kw_tokens) + 3
@@ -1315,7 +1334,8 @@ def detect_intents(transcript: str) -> list[str]:
     for intent, keywords in REACT_ABC_INTENTS.items():
         if intent == "dnc":
             continue
-        if keywords and any(_phrase_in_tokens(kw, boundary_text) for kw in keywords):
+        _allow_windowed = intent not in _WINDOWED_MATCH_EXCLUDED_INTENTS
+        if keywords and any(_phrase_in_tokens(kw, boundary_text, allow_windowed=_allow_windowed) for kw in keywords):
             matched.append(intent)
     # Also check shared intents (appointment / Q&A)
     for intent, keywords in SHARED_INTENTS.items():
