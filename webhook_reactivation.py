@@ -1085,6 +1085,34 @@ def _phrase_in_tokens(keyword: str, boundary_text: str) -> bool:
         for filler in _BRIDGING_FILLERS:
             if f" {kw_tokens[0]} {filler} {kw_tokens[1]} " in boundary_text:
                 return True
+    # Added 2026-08-19 -- fallback for 3+ token phrases: same problem class
+    # as the 2-token bridging fallback above (natural speech doesn't always
+    # keep a phrase's words adjacent/in order), but confirmed live this
+    # session on LONGER phrases the 2-token mechanism doesn't cover at all:
+    # "मुझे किसी इंसान से बात कराओ, मैनेजर से।" didn't match keyword
+    # "मैनेजर से बात" because the real utterance had "से" reordered to the
+    # end (बात...मैनेजर से, not मैनेजर से बात); "Can you please speak to me
+    # in English?" didn't match "please speak in english" because "to me"
+    # sits between "speak" and "in". Patching each such case individually
+    # doesn't scale -- this is the same shape of gap recurring across
+    # unrelated keywords. Now checks whether all of the keyword's tokens
+    # appear together, IN ANY ORDER, within a bounded window of the
+    # transcript (window size = keyword length + 3, i.e. up to 3 extra/
+    # inserted words tolerated) -- verified against both real failures
+    # above before shipping. Scoped to 3+ token phrases specifically
+    # (unlike the 2-token case): requiring 3+ SPECIFIC words to all appear
+    # together is a strong, low-false-positive signal even unordered --
+    # scattered single/paired common words wouldn't accidentally satisfy 3
+    # simultaneous constraints. Bounded window (not "anywhere in the
+    # utterance") keeps it from matching across unrelated clauses in a long,
+    # multi-topic sentence.
+    if len(kw_tokens) >= 3:
+        boundary_tokens = boundary_text.split()
+        kw_set = set(kw_tokens)
+        window = len(kw_tokens) + 3
+        for i in range(len(boundary_tokens)):
+            if kw_set.issubset(boundary_tokens[i:i + window]):
+                return True
     return False
 
 
