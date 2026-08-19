@@ -1499,6 +1499,50 @@ def detect_intents(transcript: str) -> list[str]:
     return matched
 
 
+# Added 2026-08-19 -- call2's DATE_ASK/GREETING and call3's GREETING/
+# DECISION_DATE have no qa_keys answer-loop at all (unlike react_a/b/c's
+# PRESENT_OFFER/WHATSAPP_CTA/APPOINTMENT states), and no dedicated {c2,c3}_q_*
+# cached-audio keys exist for them either -- confirmed by checking
+# knowledge_react_abc.py directly. So when detect_intents() correctly
+# recognizes one of these informational-question categories in those states,
+# there was nothing to answer it with; the turn silently fell through to
+# that state's default flow-advance/reask logic instead, as if the customer
+# had said nothing recognizable. Used below to widen the LLM-fallback trigger
+# in those 4 states beyond "intents is completely empty" to also cover "the
+# only thing recognized was a Q&A-style question this state can't answer
+# itself" -- deliberately NOT a blanket "intents didn't lead to an early
+# return" check, which would also re-trigger the slower LLM path for bare
+# low-content replies like "haan theek hai" (intents=['positive']) that
+# aren't actually questions and would just burn 1.5-4s to correctly resolve
+# to UNCLEAR before landing on the exact same reask anyway.
+_INFORMATIONAL_QA_INTENTS = {
+    "confusion_who", "ask_location", "ask_timings", "ask_name",
+    "ask_valuation", "ask_delivery", "ask_price_range", "ask_offer_scope",
+}
+
+
+def _only_unanswered_qa_intents(intents: list[str]) -> bool:
+    """True if `intents` is empty, or contains only informational Q&A
+    categories this state has no scripted/cached answer for (see
+    _INFORMATIONAL_QA_INTENTS above) -- either way, worth trying the LLM
+    fallback rather than silently falling through to the default flow.
+
+    "positive" is discounted from the check (neither counted toward nor
+    against it) -- confirmed live via testing: "showroom kahan hai bhai
+    batao zara" matches both ask_location AND positive (bare "batao" is a
+    positive keyword), and a naive subset check against intents including
+    "positive" rejected this obviously-real question. But "positive" alone
+    (e.g. a bare "haan theek hai" acknowledgment, not a real question) must
+    still NOT trigger the fallback -- that would waste 1.5-4s classifying
+    something that was never a question before landing on the same reask
+    anyway. So: strip "positive" first, then the fallback only fires if
+    something is left AND that something is entirely informational-Q&A."""
+    if not intents:
+        return True
+    meaningful = set(intents) - {"positive"}
+    return bool(meaningful) and meaningful <= _INFORMATIONAL_QA_INTENTS
+
+
 _groq_async_client: "AsyncGroq | None" = None
 
 
@@ -2884,6 +2928,19 @@ async def handle_call2_turn(session, transcript: str, call_uuid: str) -> bool:
             # separate play_key() calls let the second interrupt the first).
             await play_keys(call_uuid, ["c2_obj_not_interested", "c2_close_declined"], session)
             return False
+        # Added 2026-08-19 -- audit found call2's GREETING had no LLM-
+        # fallback coverage (WA_CHECK below already had it); a genuine
+        # unmatched question here previously went straight to WA_CHECK with
+        # no attempt to answer it. Same _REACT_LLM_FACTS grounding as
+        # react_a/b/c/call3/call2's own WA_CHECK. Stay in GREETING (don't
+        # advance the state) on a successful answer, same convention as
+        # react_a/b/c's GREETING fallback. Uses _only_unanswered_qa_intents()
+        # rather than a bare "not intents" check -- see that helper's
+        # docstring -- since this state has no qa_keys loop of its own.
+        if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+            voice = PREFIX_VOICE_MAP.get("c2", "ritu")
+            await _reprompt_or_llm_fallback(call_uuid, t, session, voice)
+            return True
         # Default (neutral or impatient) — no "annoyed, hurry up" shortcut;
         # both go straight to WA_CHECK.
         session.c2_state = "WA_CHECK"
@@ -3007,6 +3064,21 @@ async def handle_call2_turn(session, transcript: str, call_uuid: str) -> bool:
             await play_key(call_uuid, "c2_booked", session)
             await asyncio.sleep(3.0)
             return False
+
+        # Added 2026-08-19, same audit -- a genuine unanswered question here
+        # previously went straight into the vague-reask-then-close
+        # fallthrough below, same treatment as an unclear non-answer. Try to
+        # actually answer it first, same pattern as call3's DECISION_DATE
+        # and react_a/b/c's APPOINTMENT state -- answer, then re-ask the
+        # date in the same turn, doesn't consume the reask budget below. Uses
+        # _only_unanswered_qa_intents() -- see that helper's docstring --
+        # since DATE_ASK has no qa_keys loop of its own either.
+        if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+            voice = PREFIX_VOICE_MAP.get("c2", "ritu")
+            llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, voice)
+            if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=voice):
+                await play_key(call_uuid, "c2_date_direct", session, log_transcript=False)
+                return True
 
         # Vague (including busy/sochna_hai, which fall through to here for
         # this state) — one reask, then close. Deliberate, same as
@@ -3144,6 +3216,22 @@ async def handle_call3_turn(session, transcript: str, call_uuid: str) -> bool:
         if "busy" in intents:
             await play_key(call_uuid, "c3_close_busy", session)
             return False
+        # Added 2026-08-19 -- audit found call3 had ZERO LLM-fallback coverage
+        # anywhere in this handler (react_a/b/c and call2's WA_CHECK already
+        # had it; call3 was simply never wired in). A genuine unmatched
+        # question here ("EMI milta hai kya" etc.) previously just fell
+        # straight through to c3_decision_date with no attempt to answer it.
+        # Same _REACT_LLM_FACTS grounding as react_a/b/c/call2 applies
+        # unchanged -- call3 is the same offer/campaign content, just the
+        # 3rd attempt, so the facts are still accurate here. Stay in
+        # GREETING (don't advance to DECISION_DATE) on a successful answer,
+        # same convention as react_a/b/c's GREETING fallback. Uses
+        # _only_unanswered_qa_intents() -- see that helper's docstring --
+        # since this state has no qa_keys loop of its own.
+        if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+            voice = PREFIX_VOICE_MAP.get("c3", "simran")
+            await _reprompt_or_llm_fallback(call_uuid, t, session, voice)
+            return True
         session.c3_state = "DECISION_DATE"
         await play_key(call_uuid, "c3_decision_date", session)
         return True
@@ -3172,6 +3260,23 @@ async def handle_call3_turn(session, transcript: str, call_uuid: str) -> bool:
             await play_key(call_uuid, "c3_booked", session)
             await asyncio.sleep(3.0)
             return False
+
+        # Added 2026-08-19, same audit -- a genuine unanswered question here
+        # (not a date, not a matched objection) previously went straight to
+        # the vague-reask-then-close fallthrough below, identical treatment
+        # to a customer who just said something unclear. Try to actually
+        # answer it first; only fall through to the reask/close logic below
+        # if the fallback itself produced nothing (matches APPOINTMENT
+        # state's pattern in handle_reactivation_turn -- answer, then
+        # re-ask the date in the same turn, doesn't consume the reask budget).
+        # Uses _only_unanswered_qa_intents() -- see that helper's docstring --
+        # since DECISION_DATE has no qa_keys loop of its own either.
+        if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+            voice = PREFIX_VOICE_MAP.get("c3", "simran")
+            llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, voice)
+            if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=voice):
+                await play_key(call_uuid, "c3_decision_date", session, log_transcript=False)
+                return True
 
         # Vague (including busy/sochna_hai, which fall through to here for
         # this state) — one reask, then final close.

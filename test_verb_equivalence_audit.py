@@ -72,10 +72,15 @@ def patch_io(monkeypatch_target, recorder: Recorder):
     def fake_fire_immediate_dnc(session, call_uuid):
         pass
 
+    async def fake_play_dynamic_text(call_uuid, text, session=None, voice="shreya"):
+        recorder.played.append(text)
+        return True
+
     monkeypatch_target.play_key = fake_play_key
     monkeypatch_target.play_keys = fake_play_keys
     monkeypatch_target.fire_whatsapp = fake_fire_whatsapp
     monkeypatch_target._fire_immediate_dnc = fake_fire_immediate_dnc
+    monkeypatch_target.play_dynamic_text = fake_play_dynamic_text
 
 
 _results = []
@@ -92,13 +97,14 @@ def check_intent(label, transcript, expected_intent, forbidden_intents=()):
 
 async def check_reply(label, coro_fn, session, transcript, expected_key):
     recorder = Recorder()
-    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc = (
-        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc
+    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn = (
+        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc, wr.play_dynamic_text
     )
     patch_io(wr, recorder)
     try:
         await coro_fn(session, transcript, "test-call-uuid")
     finally:
+        wr.play_dynamic_text = orig_dyn
         wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
             orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
         )
@@ -304,6 +310,94 @@ async def run_keyword_md_merge_checks():
                        "obj_wa_ok_generic_ritu")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Part 6: LLM-fallback coverage extension (2026-08-19) -- call2's GREETING/
+# DATE_ASK and call3's GREETING/DECISION_DATE previously had NO fallback at
+# all (react_a/b/c and call2's WA_CHECK already had it). Verifies the
+# fallback now fires for genuinely unmatched turns AND for recognized-but-
+# unanswerable Q&A intents (ask_location etc, which these 4 states have no
+# qa_keys loop for), while still NOT firing on bare acknowledgments that
+# merely co-occur with "positive" -- that would waste real LLM latency on
+# something that was never a question.
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def run_llm_fallback_coverage_checks():
+    print("\n--- Part 6: LLM-fallback coverage extension (call2/call3) ---")
+
+    async def _fake_llm_fallback_reply(t, call_uuid):
+        return "MOCKED_LLM_ANSWER"
+
+    def _patch_llm(target):
+        target.llm_fallback_reply = _fake_llm_fallback_reply
+
+    cases = [
+        ("call3 GREETING: genuinely unmatched turn now tries the fallback",
+         wr.handle_call3_turn, dict(campaign="react_a", call_cycle="3", c3_state="GREETING"),
+         "aap mujhe apni company ka pura profile bata sakte ho"),
+        ("call3 DECISION_DATE: genuinely unmatched turn now tries the fallback",
+         wr.handle_call3_turn, dict(campaign="react_a", call_cycle="3", c3_state="DECISION_DATE"),
+         "aap mujhe apni company ka pura profile bata sakte ho"),
+        ("call2 GREETING: genuinely unmatched turn now tries the fallback",
+         wr.handle_call2_turn, dict(campaign="react_a", call_cycle="2", c2_state="GREETING"),
+         "aap mujhe apni company ka pura profile bata sakte ho"),
+        ("call2 DATE_ASK: genuinely unmatched turn now tries the fallback",
+         wr.handle_call2_turn, dict(campaign="react_a", call_cycle="2", c2_state="DATE_ASK"),
+         "aap mujhe apni company ka pura profile bata sakte ho"),
+        ("call2 DATE_ASK: recognized-but-unanswerable ask_location (co-matched with positive) tries the fallback",
+         wr.handle_call2_turn, dict(campaign="react_a", call_cycle="2", c2_state="DATE_ASK"),
+         "showroom kahan hai bhai batao zara"),
+        ("call3 GREETING: recognized ask_price_range tries the fallback",
+         wr.handle_call3_turn, dict(campaign="react_a", call_cycle="3", c3_state="GREETING"),
+         "sofa kitne ka hai"),
+    ]
+    for label, coro_fn, sess_kwargs, transcript in cases:
+        recorder = Recorder()
+        orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
+            wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
+            wr.play_dynamic_text, wr.llm_fallback_reply
+        )
+        patch_io(wr, recorder)
+        _patch_llm(wr)
+        try:
+            s = make_session(**sess_kwargs)
+            await coro_fn(s, transcript, "test-call-uuid")
+        finally:
+            wr.llm_fallback_reply = orig_llm
+            wr.play_dynamic_text = orig_dyn
+            wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
+                orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
+            )
+        ok = "MOCKED_LLM_ANSWER" in recorder.played
+        status = "PASS" if ok else "FAIL"
+        print(f"[{status}] {label:<85} played={recorder.played!r}")
+        _results.append(ok)
+
+    # Negative case: a bare acknowledgment ("haan theek hai", intents=['positive']
+    # only) must NOT trigger the fallback -- confirmed this was a real bug found
+    # while building the fix above (a naive "not intents" widening would have
+    # fired the slow LLM path on every bare "yes/ok" reply too).
+    recorder = Recorder()
+    orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc, orig_dyn, orig_llm = (
+        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc,
+        wr.play_dynamic_text, wr.llm_fallback_reply
+    )
+    patch_io(wr, recorder)
+    _patch_llm(wr)
+    try:
+        s = make_session(campaign="react_a", call_cycle="2", c2_state="DATE_ASK")
+        await wr.handle_call2_turn(s, "haan theek hai", "test-call-uuid")
+    finally:
+        wr.llm_fallback_reply = orig_llm
+        wr.play_dynamic_text = orig_dyn
+        wr.play_key, wr.play_keys, wr.fire_whatsapp, wr._fire_immediate_dnc = (
+            orig_play_key, orig_play_keys, orig_fire_wa, orig_dnc
+        )
+    ok = "MOCKED_LLM_ANSWER" not in recorder.played
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'bare acknowledgment must NOT trigger the LLM fallback':<85} played={recorder.played!r}")
+    _results.append(ok)
+
+
 async def main():
     print("--- Part 1: verb-form-alias axis coverage ---")
     for label, transcript, expected in INTENT_AXIS_CASES:
@@ -320,6 +414,7 @@ async def main():
     await run_priority_order_fixes()
     await run_end_to_end_reply_checks()
     await run_keyword_md_merge_checks()
+    await run_llm_fallback_coverage_checks()
 
     passed = sum(_results)
     total = len(_results)
