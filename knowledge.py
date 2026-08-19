@@ -447,26 +447,42 @@ def _tokenize_words(text: str) -> list[str]:
 
 
 def _is_negated_nearby(tokens: list[str], kw_tokens: list[str]) -> bool:
+    """True only if EVERY occurrence of the keyword's first token in `tokens`
+    has a negation word nearby -- not just any one of them. Matches
+    webhook_reactivation.py's _phrase_in_tokens() negation-guard semantics
+    (all(), not any()) -- found during a 2026-08-19 code review that this
+    function originally used any()-across-occurrences, an inconsistency with
+    its sibling implementation that could false-suppress a legitimate match
+    if the same keyword-starting word happens to appear twice in one clause,
+    once negated and once not (e.g. a real, non-negated question stated
+    alongside an unrelated negated mention of the same word)."""
     if not kw_tokens:
         return False
     kw_first = kw_tokens[0]
-    for i, tok in enumerate(tokens):
-        if tok == kw_first:
-            lo = max(0, i - _DIRECT_MATCH_NEGATION_WINDOW)
-            hi = min(len(tokens), i + _DIRECT_MATCH_NEGATION_WINDOW + 1)
-            if any(w in _DIRECT_MATCH_NEGATION_WORDS for w in tokens[lo:hi]):
-                return True
-    return False
+    positions = [i for i, tok in enumerate(tokens) if tok == kw_first]
+    if not positions:
+        return False
+
+    def _negated_at(i: int) -> bool:
+        lo = max(0, i - _DIRECT_MATCH_NEGATION_WINDOW)
+        hi = min(len(tokens), i + _DIRECT_MATCH_NEGATION_WINDOW + 1)
+        return any(w in _DIRECT_MATCH_NEGATION_WORDS for w in tokens[lo:hi])
+
+    return all(_negated_at(i) for i in positions)
 
 
 def get_direct_match(text: str) -> str | None:
     text_lower = text.lower()
+    # Clause-split and tokenize the transcript ONCE, not once per keyword --
+    # found during a 2026-08-19 code review: this work was being redone
+    # inside the per-keyword loop below (~174 keywords), pure wasted work for
+    # the same fixed input text. Hoisted out; behavior is unchanged.
+    clauses = [_tokenize_words(c) for c in _DIRECT_MATCH_CLAUSE_SPLIT_RE.split(text_lower)]
+    boundary_clauses = [f" {' '.join(c)} " for c in clauses]
     for kw in sorted(DIRECT_KEYWORD_MAP, key=len, reverse=True):
         kw_tokens = kw.split()
         boundary_kw = f" {' '.join(kw_tokens)} "
-        for clause in _DIRECT_MATCH_CLAUSE_SPLIT_RE.split(text_lower):
-            clause_tokens = _tokenize_words(clause)
-            boundary_clause = f" {' '.join(clause_tokens)} "
+        for clause_tokens, boundary_clause in zip(clauses, boundary_clauses):
             if boundary_kw in boundary_clause and not _is_negated_nearby(clause_tokens, kw_tokens):
                 return DIRECT_KEYWORD_MAP[kw]
     return None

@@ -2318,8 +2318,9 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     # acknowledgment. Stays in the same single APPOINTMENT state either way
     # (fresh_cta has no sub-states to advance between).
     if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
-        llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, "simran", facts=_FRESH_LLM_FACTS)
-        if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice="simran"):
+        _fresh_voice = PREFIX_VOICE_MAP.get("fresh", "simran")
+        llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _fresh_voice, facts=_FRESH_LLM_FACTS)
+        if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=_fresh_voice):
             await play_key(call_uuid, "fresh_objection", session, log_transcript=False)
             return True
 

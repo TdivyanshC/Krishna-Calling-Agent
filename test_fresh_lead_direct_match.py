@@ -47,6 +47,8 @@ def main():
           "मुझे पता नहीं है", None)
     check("negation in an earlier, unrelated clause doesn't suppress a real match",
           "sofa nahi bed chahiye, EMI hai kya", "payment_methods")
+    check("repeated keyword-first-word, one negated + one legitimate in the same clause -- must still match (all() semantics, 2026-08-19 review fix)",
+          "warranty nahi chahiye lekin warranty kitne saal ki hai batao", "warranty_quality")
 
     print("\n--- word-boundary guard: substring-inside-a-word must not match ---")
     check("'customer' must not trigger bare 'custom' -> customization",
