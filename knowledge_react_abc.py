@@ -720,7 +720,12 @@ REACT_ABC_INTENTS = {
               # Confirmed live 2026-08-13: "pehle mujhe detail send kijiye"
               # matched nothing, despite being an explicit, unambiguous
               # request to send the WhatsApp.
-              "send kijiye", "सेंड कीजिए", "bhej dijiye", "भेज दीजिए"],
+              "send kijiye", "सेंड कीजिए", "bhej dijiye", "भेज दीजिए",
+              # "whatsapp par bhej sakte hain" (polite question form -- can
+              # you send it) added 2026-08-19, same gap class as
+              # callback_later/want_human/cancel_appointment found the same
+              # day -- only the imperative ("bhejo"/"bhej do") was covered.
+              "whatsapp par bhej sakte hain", "व्हाट्सएप पर भेज सकते हैं"],
     "wa_no_whatsapp": ["whatsapp nahi hai", "use nahi karta", "no whatsapp",
                       "व्हाट्सएप नहीं है", "यूज़ नहीं करता", "नो व्हाट्सएप"],
     "wa_diff_number": ["alag number", "doosra number", "different number",
@@ -1114,17 +1119,30 @@ REACT_ABC_INTENTS = {
                             "brand kaunsi hai", "quality", "material",
                             "मटेरियल क्या है", "क्वालिटी कैसी है", "ब्रांड कौनसी है",
                             "क्वालिटी", "मटेरियल"],
+    # "kya aap X kar sakte hain" (polite question form -- can you...) added
+    # 2026-08-19 across every category below, after confirming this exact
+    # gap class in Pratham's real call recording for callback_later, then
+    # systematically checking every other imperative-verb-based category
+    # and finding the same "only the command form is covered" gap repeated
+    # in ask_pickup_logistics/reschedule_appointment/cancel_appointment/
+    # want_human -- reschedule_appointment and ask_pickup_logistics were
+    # actively MISCLASSIFYING (matching appointment_confirm/offer_clarify
+    # instead of just missing), not just falling through to no match.
     "ask_pickup_logistics": ["purana furniture kaun le jaega", "hum khud laayen kya",
                              "pickup free hai kya", "gaadi bhejoge kya",
+                             "purana furniture khud le ja sakte hain",
                              "पुराना फर्नीचर कौन ले जाएगा", "पिकअप फ्री है क्या",
-                             "गाड़ी भेजोगे क्या"],
+                             "गाड़ी भेजोगे क्या", "पुराना फर्नीचर खुद ले जा सकते हैं"],
     "reschedule_appointment": ["date change karni hai", "meri appointment reschedule karo",
                                "main us din nahi aa paunga", "doosri date de do",
+                               "meri date reschedule kar sakte hain", "date change kar sakte hain",
                                "डेट चेंज करनी है", "अपॉइंटमेंट रीशेड्यूल करो",
-                               "मैं उस दिन नहीं आ पाऊंगा", "दूसरी डेट दे दो"],
+                               "मैं उस दिन नहीं आ पाऊंगा", "दूसरी डेट दे दो",
+                               "मेरी डेट रीशेड्यूल कर सकते हैं", "डेट चेंज कर सकते हैं"],
     "cancel_appointment": ["appointment cancel karo", "main nahi aa paunga ab",
-                           "visit cancel kar do",
-                           "अपॉइंटमेंट कैंसिल करो", "मैं नहीं आ पाऊंगा अब", "विजिट कैंसिल कर दो"],
+                           "visit cancel kar do", "appointment cancel kar sakte hain",
+                           "अपॉइंटमेंट कैंसिल करो", "मैं नहीं आ पाऊंगा अब", "विजिट कैंसिल कर दो",
+                           "अपॉइंटमेंट कैंसिल कर सकते हैं"],
     "legal_threat": ["consumer court jaunga", "legal action lunga",
                      "TRAI mein complaint karunga", "court mein le jaunga",
                      "कंज्यूमर कोर्ट जाऊंगा", "लीगल एक्शन लूंगा",
@@ -1144,7 +1162,7 @@ REACT_ABC_INTENTS = {
     # बात कराओ" (not bare "कराओ" alone, which would be far too generic and
     # collide with unrelated causative-verb sentences).
     "want_human": ["mujhe insaan se baat karni hai", "real agent se baat karwao",
-                   "human se connect karo",
+                   "human se connect karo", "insaan se baat karwa sakte hain",
                    "मुझे इंसान से बात करनी है", "ह्यूमन से कनेक्ट करो", "असली आदमी से बात करवाओ",
-                   "इंसान से बात कराओ"],
+                   "इंसान से बात कराओ", "इंसान से बात करवा सकते हैं"],
 }
