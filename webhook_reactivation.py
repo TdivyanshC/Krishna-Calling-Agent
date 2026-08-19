@@ -576,6 +576,43 @@ async def route_objection(
     # worked.
     _defer_to_not_interested = "not_interested" in intents and not (prefix == "c2" and state == "WA_CHECK")
 
+    # -1. awaiting_callback_time -- added 2026-08-19. Confirmed live on a real
+    #     test call: category 12 below (callback_later) asks "kaunsa time
+    #     aapke liye theek rahega?" and promises "main usi waqt call kar
+    #     loongi" -- but the call previously just ended right there
+    #     (`return False`), regardless of any answer, because nothing in this
+    #     system captures or acts on a stated callback time. The customer
+    #     never got a chance to answer a question the script explicitly
+    #     asked. Fixed at the mechanism level: category 12 now sets this flag
+    #     and keeps the call open instead of ending it; this block runs FIRST
+    #     on the very next turn, before any other intent handling, so the
+    #     answer isn't misrouted into appointment_confirm's SHOWROOM-VISIT
+    #     date logic (a real risk -- "shaam ko"/"kal" are bare appointment_
+    #     confirm keywords, and confirming a callback time is NOT the same
+    #     thing as confirming a store visit). Deferred to the normal
+    #     not_interested handling below if the customer declined instead of
+    #     answering (check_hard_rejection() already catches an explicit DNC/
+    #     decline before route_objection() is even reached; this only guards
+    #     against a softer not_interested still reaching this far).
+    #     Deliberately still doesn't SCHEDULE anything real -- no orchestrator
+    #     capability exists for that -- this only fixes the immediate "the
+    #     call is left after asking a question" bug. Real callback-time
+    #     capture/scheduling remains a separate, bigger piece of work.
+    if getattr(session, "awaiting_callback_time", False):
+        session.awaiting_callback_time = False
+        if not _defer_to_not_interested:
+            voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
+            _gave_a_time = (
+                "appointment_confirm" in intents
+                or _has_date_context_digit(transcript)
+                or _has_standalone_day_suffix(transcript)
+            )
+            if _gave_a_time:
+                await play_key(call_uuid, f"obj_callback_time_noted_{voice}", session)
+            else:
+                await play_key(call_uuid, f"obj_callback_time_unclear_{voice}", session)
+            return False
+
     # 0a. legal_threat -- added 2026-08-15 (Agent_Replies_Warm.md rewrite).
     #     Highest priority in this function: a caller threatening legal or
     #     regulatory action is a real compliance-risk signal, not an
@@ -888,16 +925,25 @@ async def route_objection(
     #     flagged this needs a real decision: there's no callback-time slot
     #     anywhere in this system (appointment_confirm captures a showroom
     #     visit DATE, not a callback TIME), so honoring "call me at 6pm"
-    #     would need new orchestrator capability, not just a line. Going
-    #     with Option 1 (acknowledge only) here -- plays the doc's primary
-    #     ask-for-a-time line, but nothing captures or acts on whatever time
-    #     the caller actually gives; the call still just ends on the
-    #     existing retry cooldown like any other soft close. Real
-    #     callback-time capture is a separate, larger piece of work.
+    #     would need new orchestrator capability, not just a line.
+    #
+    #     UPDATED 2026-08-19 -- confirmed live on a real test call: this line
+    #     explicitly asks "kaunsa time aapke liye theek rahega?" and promises
+    #     "main usi waqt call kar loongi", but `return False` ended the call
+    #     immediately after asking, before the customer could answer at all
+    #     -- the script promised to listen, the code never did. Now sets
+    #     awaiting_callback_time and keeps the call open (`return True`) so
+    #     the very next turn -- handled by the -1 block above, BEFORE any
+    #     other intent dispatch -- actually hears the answer. Still doesn't
+    #     capture/act on the stated time anywhere real (see the flag's own
+    #     comment) -- that's still separate, larger work -- this only fixes
+    #     the immediate "asks a question, hangs up before hearing the
+    #     answer" bug.
     if "callback_later" in intents and not _defer_to_not_interested:
         voice = PREFIX_VOICE_MAP.get(prefix, "shreya")
         await play_key(call_uuid, f"obj_callback_later_generic_{voice}", session)
-        return False
+        session.awaiting_callback_time = True
+        return True
 
     # 13. lang_pref_english/lang_pref_hindi/lang_pref_other -- rewritten
     #     2026-08-18 now that real English support exists

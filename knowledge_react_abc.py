@@ -438,6 +438,21 @@ SHARED_SCRIPT = {
     "obj_callback_later_generic_ritu": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_shreya": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_simran": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
+    # Added 2026-08-19 -- the follow-up turn after obj_callback_later_generic
+    # actually asks "kaunsa time theek rahega" and, until this fix, the call
+    # ended before ever hearing the answer (see route_objection()'s -1 block
+    # and category 12's comment). These two lines close that follow-up turn:
+    # _noted plays when the customer's reply looked like an actual time/date
+    # answer, _unclear when it didn't. Deliberately "koshish karungi" (I'll
+    # TRY to call then) rather than a firm promise -- no real scheduling
+    # capability captures or acts on the stated time anywhere in this system
+    # yet, so a firmer promise would be dishonest.
+    "obj_callback_time_noted_ritu": "Bilkul ji, note kar liya — usi samay call karne ki koshish karungi. Bahut shukriya, aapka din shubh ho!",
+    "obj_callback_time_noted_shreya": "Bilkul ji, note kar liya — usi samay call karne ki koshish karungi. Bahut shukriya, aapka din shubh ho!",
+    "obj_callback_time_noted_simran": "Bilkul ji, note kar liya — usi samay call karne ki koshish karungi. Bahut shukriya, aapka din shubh ho!",
+    "obj_callback_time_unclear_ritu": "Koi baat nahi ji, main thodi der baad phir se try karungi. Bahut shukriya!",
+    "obj_callback_time_unclear_shreya": "Koi baat nahi ji, main thodi der baad phir se try karungi. Bahut shukriya!",
+    "obj_callback_time_unclear_simran": "Koi baat nahi ji, main thodi der baad phir se try karungi. Bahut shukriya!",
     # Replaced 2026-08-18 -- real English support now exists
     # (knowledge_react_abc_en.py), so the old single Hindi-only honest
     # stopgap ("sorry, Hindi only for now") is stale for the English-request

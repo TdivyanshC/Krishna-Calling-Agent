@@ -471,6 +471,62 @@ async def run_greeting_busy_playkeys_and_callback_checks():
         _results.append(ok)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Part 8: callback_later now actually listens for the answer (2026-08-19).
+# Confirmed live: the reply explicitly asks "kaunsa time theek rahega?" and
+# promises "main usi waqt call kar loongi", but the call previously ended
+# immediately after asking, before the customer could answer at all. Fixed
+# by keeping the call open and handling the very next turn specially (via
+# session.awaiting_callback_time), BEFORE any other intent dispatch -- the
+# real risk being that a bare time answer ("shaam ko"/"kal") is also a bare
+# appointment_confirm keyword, which must NOT get misread as confirming a
+# SHOWROOM VISIT date.
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def run_awaiting_callback_time_checks():
+    print("\n--- Part 8: callback_later actually listens for the answer ---")
+
+    # Scenario 1: customer gives a time-like answer -> acknowledged honestly,
+    # call ends -- and critically, appointment_confirmed must stay False.
+    recorder = Recorder()
+    async with patched_wr(recorder):
+        s = make_session(campaign="react_a", call_cycle=None, react_state="GREETING")
+        await wr.handle_reactivation_turn(s, "aap mujhe baad mein call karna, main busy hoon", "test-call-uuid")
+        await wr.handle_reactivation_turn(s, "shaam ko", "test-call-uuid")
+    ok = ("obj_callback_time_noted_ritu" in recorder.played
+          and s.appointment_confirmed is False
+          and s.react_state == "GREETING")
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'time-like answer (\"shaam ko\") acknowledged, NOT misread as a showroom-visit confirm':<85} played={recorder.played!r}")
+    _results.append(ok)
+
+    # Scenario 2: vague/unclear reply -> honest "I'll try again later" close,
+    # not force-treated as a time.
+    recorder = Recorder()
+    async with patched_wr(recorder):
+        s = make_session(campaign="react_a", call_cycle=None, react_state="GREETING")
+        await wr.handle_reactivation_turn(s, "aap mujhe baad mein call karna, main busy hoon", "test-call-uuid")
+        await wr.handle_reactivation_turn(s, "pata nahi abhi", "test-call-uuid")
+    ok = "obj_callback_time_unclear_ritu" in recorder.played
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'vague reply (\"pata nahi\") gets the honest unclear close, not the noted one':<85} played={recorder.played!r}")
+    _results.append(ok)
+
+    # Scenario 3: customer declines instead of answering -> must defer to the
+    # NORMAL not_interested handling, not get swallowed as an "unclear"
+    # callback-time answer.
+    recorder = Recorder()
+    async with patched_wr(recorder):
+        s = make_session(campaign="react_a", call_cycle=None, react_state="GREETING")
+        await wr.handle_reactivation_turn(s, "aap mujhe baad mein call karna, main busy hoon", "test-call-uuid")
+        await wr.handle_reactivation_turn(s, "interested nahi hai mujhe", "test-call-uuid")
+    ok = ("obj_callback_time_noted_ritu" not in recorder.played
+          and "obj_callback_time_unclear_ritu" not in recorder.played)
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {'explicit decline on the follow-up turn defers to normal not_interested handling':<85} played={recorder.played!r}")
+    _results.append(ok)
+
+
 async def main():
     print("--- Part 1: verb-form-alias axis coverage ---")
     for label, transcript, expected in INTENT_AXIS_CASES:
@@ -489,6 +545,7 @@ async def main():
     await run_keyword_md_merge_checks()
     await run_llm_fallback_coverage_checks()
     await run_greeting_busy_playkeys_and_callback_checks()
+    await run_awaiting_callback_time_checks()
 
     passed = sum(_results)
     total = len(_results)
