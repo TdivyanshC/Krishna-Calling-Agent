@@ -72,7 +72,6 @@ REACT_A_SCRIPT = {
     "ra_appointment_reask": "Maaf kijiye ji, date theek se samajh nahi aayi. Ek baar phir se bata dijiye please?",
     "ra_filler_1": "Haan ji...", "ra_filler_2": "Ji haan...", "ra_filler_3": "Bilkul ji...",
     "ra_filler_4": "Achha ji...", "ra_filler_5": "Samajh gayi ji...", "ra_filler_6": "Theek hai ji...",
-
 }
 
 REACT_B_SCRIPT = {
@@ -118,7 +117,6 @@ REACT_B_SCRIPT = {
     "rb_appointment_reask": "Maaf kijiye ji, date theek se samajh nahi aayi. Ek baar phir se bata dijiye please?",
     "rb_filler_1": "Haan ji...", "rb_filler_2": "Ji haan...", "rb_filler_3": "Bilkul ji...",
     "rb_filler_4": "Achha ji...", "rb_filler_5": "Samajh gayi ji...", "rb_filler_6": "Theek hai ji...",
-
 }
 
 REACT_C_SCRIPT = {
@@ -307,7 +305,7 @@ def get_prefix(campaign: str) -> str:
     return {"react_a": "ra", "react_b": "rb", "react_c": "rc", "fresh_cta": "fresh"}.get(campaign, "ra")
 
 
-# Runtime-importable mirror of generate_react_abc_v2_cache.py's SPEAKER_MAP —
+# Runtime-importable mirror of generate_react_abc_v2_cache.py's SPEAKER_MAP --
 # that file is a one-shot generation script, not meant to be imported by the
 # live app, but route_objection() (webhook_reactivation.py) needs the same
 # prefix->voice mapping at request time to pick the correctly-voiced variant
@@ -332,7 +330,7 @@ SHARED_SCRIPT = {
     # Flow-agnostic "please repeat that" acknowledgment, used by
     # route_objection() (webhook_reactivation.py) for every repeat-intent
     # turn EXCEPT react Call1's GREETING state, which keeps its existing
-    # content-specific {p}_greet_repeat line. Same text in all 3 voices —
+    # content-specific {p}_greet_repeat line. Same text in all 3 voices --
     # 3 separate keys (not 1) because this line is reachable from flows that
     # don't share a voice (fresh_cta/Call3=simran, Call2=ritu, react_a/b/c
     # =ritu/shreya/simran) and a single voice would audibly clash mid-call
@@ -341,38 +339,12 @@ SHARED_SCRIPT = {
     "obj_repeat_generic_ritu": "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi aayi. Ek baar phir se bata dijiye please?",
     "obj_repeat_generic_shreya": "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi aayi. Ek baar phir se bata dijiye please?",
     "obj_repeat_generic_simran": "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi aayi. Ek baar phir se bata dijiye please?",
-    # Phase 2b — GREETING-stage busy/sochna_hai gap (react_a/b/c, call2,
-    # call3). Same 3-voice-variant reasoning as obj_repeat_generic above.
-    # Deliberately content-free (no offer/pitch reference) since the
-    # customer hasn't heard anything yet at GREETING — route_objection()
-    # plays this THEN immediately plays that flow's own next default line
-    # in the same turn (offer_main / c2_wa_check / c3_decision_date),
-    # mirroring the two-play convention GREETING already uses for every
-    # other acknowledged intent there (confusion_who etc).
     "obj_timing_greet_generic_ritu": "Bilkul samajhti hoon ji, koi jaldi nahi. Bas do minute mein simple si baat bata deti hoon — phir poori tarah aapki marzi.",
     "obj_timing_greet_generic_shreya": "Bilkul samajhti hoon ji, koi jaldi nahi. Bas do minute mein simple si baat bata deti hoon — phir poori tarah aapki marzi.",
     "obj_timing_greet_generic_simran": "Bilkul samajhti hoon ji, koi jaldi nahi. Bas do minute mein simple si baat bata deti hoon — phir poori tarah aapki marzi.",
-    # Four added 2026-08-14 -- "escalate"/"wa_ok"/"wa_prefers"/"personal_question"
-    # were all being correctly detected by detect_intents() and then silently
-    # dropped -- confirmed live, zero routing checks anywhere in the file for
-    # any of the four. Same cross-flow-generic pattern as obj_repeat_generic/
-    # obj_timing_greet_generic above (one text, three voice-suffixed keys).
-    #
-    # obj_escalate_generic rewritten 2026-08-15 to the doc's ★ escalate text,
-    # which names a "Customer Relations Head" and asks the caller for a
-    # callback time. NOTE: this promise has no backing implementation yet —
-    # nothing captures the caller's answer to "aap kaunsa time batayenge?" or
-    # logs a real callback task anywhere in the codebase. Implementing the
-    # TEXT here per explicit instruction ("implement everything as it is");
-    # the logging/follow-up mechanism to make this promise real is still a
-    # separate, not-yet-designed piece of work (see pending tasks).
     "obj_escalate_generic_ritu": "Bilkul ji — is baare mein main hamari Customer Relations Head se aapki baat karwa deti hoon. Abhi woh call par available nahi hain, toh main aapke liye ek call schedule kar deti hoon — woh aapko poori tarah help karengi. Aap kaunsa time batayenge?",
     "obj_escalate_generic_shreya": "Bilkul ji — is baare mein main hamari Customer Relations Head se aapki baat karwa deti hoon. Abhi woh call par available nahi hain, toh main aapke liye ek call schedule kar deti hoon — woh aapko poori tarah help karengi. Aap kaunsa time batayenge?",
     "obj_escalate_generic_simran": "Bilkul ji — is baare mein main hamari Customer Relations Head se aapki baat karwa deti hoon. Abhi woh call par available nahi hain, toh main aapke liye ek call schedule kar deti hoon — woh aapko poori tarah help karengi. Aap kaunsa time batayenge?",
-    # Not covered by the doc (personal_question isn't one of its named
-    # categories -- it's distinct from ask_name, covering personal/off-topic
-    # questions directed at the bot). Kept from the 2026-08-14 fix, given the
-    # same "ji" warm-register polish as everything else in this pass.
     "obj_personal_question_generic_ritu": "Main Krishna Furniture ki AI assistant hoon ji, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
     "obj_personal_question_generic_shreya": "Main Krishna Furniture ki AI assistant hoon ji, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
     "obj_personal_question_generic_simran": "Main Krishna Furniture ki AI assistant hoon ji, aapki madad ke liye yahan hoon. Bataiye, kya jaankari chahiye?",
@@ -382,28 +354,9 @@ SHARED_SCRIPT = {
     "obj_wa_prefers_generic_ritu": "Bilkul samajhti hoon ji, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
     "obj_wa_prefers_generic_shreya": "Bilkul samajhti hoon ji, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
     "obj_wa_prefers_generic_simran": "Bilkul samajhti hoon ji, WhatsApp par hi baat karte hain aage se. Abhi details bhej rahi hoon.",
-    # Added 2026-08-13 -- business decision: no turn should ever produce zero
-    # reply. Previously, once a call was flagged as a likely IVR/hold loop
-    # (ivr_fragment_count > 0), every further unmatched turn stayed silent
-    # for the rest of that call -- built to avoid re-explaining the offer to
-    # a voicemail machine, but confirmed live it also silenced a real,
-    # engaged customer whose question happened to share a word with an IVR
-    # pattern (see _IVR_FRAGMENT_PATTERNS' "अवेलेबल" removal same day). This
-    # line replaces silence in all 4 of those branches -- harmless if it's
-    # actually a machine, and means a real customer always gets acknowledged
-    # instead of dead air, even when the system doesn't know how to answer
-    # what they actually asked.
     "wa_fallback_deflect_ritu": "Main details WhatsApp par bhej deti hoon ji, aap wahan check kar lijiyega please.",
     "wa_fallback_deflect_shreya": "Main details WhatsApp par bhej deti hoon ji, aap wahan check kar lijiyega please.",
     "wa_fallback_deflect_simran": "Main details WhatsApp par bhej deti hoon ji, aap wahan check kar lijiyega please.",
-    # Added 2026-08-13 -- fillers to bridge the LLM fallback's real latency
-    # (0.5-4s, vs ~5-10ms for the normal cached-audio path) with something
-    # topic-appropriate instead of dead air. Voice-matched per campaign
-    # (unlike filler_audio.py's existing fillers, which hardcode "shreya"
-    # for every call regardless of which voice is actually speaking --
-    # likely part of why a voice sounded wrong on an earlier call). Picked
-    # by a fast local keyword check on the raw transcript (webhook_reactivation.
-    # _pick_llm_filler_key()) -- no LLM call, adds no latency of its own.
     "llm_filler_price_ritu": "Ek second ji, price dekh kar bataati hoon...",
     "llm_filler_price_shreya": "Ek second ji, price dekh kar bataati hoon...",
     "llm_filler_price_simran": "Ek second ji, price dekh kar bataati hoon...",
@@ -413,16 +366,6 @@ SHARED_SCRIPT = {
     "llm_filler_generic_ritu": "Ek second ji, abhi dekhti hoon...",
     "llm_filler_generic_shreya": "Ek second ji, abhi dekhti hoon...",
     "llm_filler_generic_simran": "Ek second ji, abhi dekhti hoon...",
-
-    # ─────────────────────────────────────────────────────────────────────
-    # 22 new situational categories added 2026-08-15 (Agent_Replies_Warm.md,
-    # user-approved verbatim) -- routing wired in route_objection()
-    # (webhook_reactivation.py). See that function's comments for which of
-    # these are terminal (end the call) vs continue, and which promises
-    # (Customer Relations Head callback, real callback-time capture, human-
-    # review flagging for legal_threat) are text-only, not yet backed by
-    # real logic -- flagged there, not repeated here.
-    # ─────────────────────────────────────────────────────────────────────
     "obj_wrong_number_generic_ritu": "Oh, maafi chahti hoon ji — lagta hai hamare record mein number thoda purana ho gaya hai. Aapko bekaar mein disturb kiya, iske liye sorry. Aapka din shubh ho!",
     "obj_wrong_number_generic_shreya": "Oh, maafi chahti hoon ji — lagta hai hamare record mein number thoda purana ho gaya hai. Aapko bekaar mein disturb kiya, iske liye sorry. Aapka din shubh ho!",
     "obj_wrong_number_generic_simran": "Oh, maafi chahti hoon ji — lagta hai hamare record mein number thoda purana ho gaya hai. Aapko bekaar mein disturb kiya, iske liye sorry. Aapka din shubh ho!",
@@ -438,23 +381,12 @@ SHARED_SCRIPT = {
     "obj_callback_later_generic_ritu": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_shreya": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
     "obj_callback_later_generic_simran": "Bilkul ji, aap abhi busy hain — koi baat nahi. Aap bata dijiye, kaunsa time aapke liye theek rahega — aaj shaam ya kal? Main usi waqt call kar loongi, taaki aapko convenient ho.",
-    # Replaced 2026-08-18 -- real English support now exists
-    # (knowledge_react_abc_en.py), so the old single Hindi-only honest
-    # stopgap ("sorry, Hindi only for now") is stale for the English-request
-    # direction. route_objection() flips session.lang BEFORE calling
-    # play_key() for lang_pref_english/lang_pref_hindi, so in the normal
-    # case these Hindi-dict copies are never actually heard (the English
-    # dict's version plays instead once lang flips to "en") -- kept here
-    # anyway for key-parity between the Hindi/English SHARED_SCRIPT dicts
-    # and as a reasonable fallback if that ever changes.
     "obj_lang_pref_english_generic_ritu": "Bilkul ji, ab main English mein baat karti hoon.",
     "obj_lang_pref_english_generic_shreya": "Bilkul ji, ab main English mein baat karti hoon.",
     "obj_lang_pref_english_generic_simran": "Bilkul ji, ab main English mein baat karti hoon.",
     "obj_lang_pref_hindi_generic_ritu": "Bilkul ji, main Hindi mein hi baat karti hoon.",
     "obj_lang_pref_hindi_generic_shreya": "Bilkul ji, main Hindi mein hi baat karti hoon.",
     "obj_lang_pref_hindi_generic_simran": "Bilkul ji, main Hindi mein hi baat karti hoon.",
-    # Punjabi isn't supported (no script/TTS for it) -- honest about that
-    # specifically, doesn't flip session.lang either way.
     "obj_lang_pref_other_generic_ritu": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",
     "obj_lang_pref_other_generic_shreya": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",
     "obj_lang_pref_other_generic_simran": "Punjabi mein abhi possible nahi hai ji, lekin main Hindi ya English dono mein baat kar sakti hoon — jo aapko sahi lage.",

@@ -973,6 +973,78 @@ async def route_objection(
 _TOKEN_EDGE_PUNCT = ".,!?;:'\"()[]{}—-–।॥*"
 
 
+# Verb-conjugation equivalence classes -- added 2026-08-19 as the structural
+# fix for a recurring bug class: 5 categories (callback_later, want_human,
+# cancel_appointment, ask_pickup_logistics, wa_ok) were each found missing the
+# polite "kar sakte hain" question form of a verb whose imperative form
+# ("karo") was already covered, discovered one real customer call at a time
+# (Pratham's "baad mein call kar sakte hain?"). Hand-enumerating every
+# inflection of every verb in every category is a losing game against Hindi/
+# Hinglish morphology (the same request can be phrased as karo/karna/karenge/
+# kariye/kijiye/kar sakte hain/karni hai, in Latin or Devanagari) -- so instead
+# of listing more phrases, this normalizes surface inflections of the handful
+# of verbs that actually drive this domain's action-request categories down to
+# ONE canonical spelling, applied identically to keyword tokens and transcript
+# tokens (same mechanism as the chandrabindu/nuqta normalization above), so a
+# single keyword written in its existing spelling transparently also matches
+# every inflected variant.
+#
+# Deliberately an explicit, exact-token equivalence table -- not a generic
+# suffix-stripping stemmer. A real stemmer risks silently merging unrelated
+# words that happen to share a suffix (Devanagari conjuncts especially punish
+# naive suffix rules, per _tokenize()'s own \w-splitting lesson above), and
+# would be unverifiable against the small, specific verb vocabulary this file
+# actually uses. Every group below is grounded in verb forms that actually
+# occur in REACT_ABC_INTENTS/SHARED_INTENTS today (see the audit that produced
+# this change), not hypothetical conjugations.
+#
+# Each canonical target is the spelling ALREADY used by existing keywords in
+# knowledge_react_abc.py (karo/sakte/do/करो/सकते/दो/करवाओ are all pre-existing
+# literal keyword tokens) -- so this needs zero changes to that file to take
+# effect; it purely widens what a keyword written once already matches.
+#
+# Deliberately EXCLUDES 1st-person future/declarative forms (karunga/lunga/
+# jaunga/करूंगा -- "I will do X") from the request-verb group below, even
+# though they share the same "karna" root: those are a different speech act
+# ("I will complain" is a threat/statement, not "please do X for me"/"can you
+# do X"), used today only inside dnc/legal_threat phrases where mixing them
+# into the same equivalence class as callback_later/want_human/etc.'s request
+# forms would let a customer's self-declaration falsely satisfy a request-
+# shaped keyword. Kept out on purpose -- verified via the negation/false-
+# positive sweep in Part 1's audit that no test case relies on merging them.
+_VERB_FORM_ALIASES = {
+    # "karna" (to do) -- 2nd-person imperative / honorific-imperative /
+    # infinitive / polite-future / "need to" forms, all requesting or
+    # asking about an action. Canonical target: "karo" (existing keyword
+    # spelling, 28 occurrences -- the most common form already in the file).
+    "karna": "karo", "kar": "karo", "kariye": "karo", "kijiye": "karo",
+    "karte": "karo", "karta": "karo", "karti": "karo", "karni": "karo",
+    "karoge": "karo", "karenge": "karo", "karein": "karo", "karen": "karo",
+    "करना": "करो", "कर": "करो", "करिये": "करो", "कीजिए": "करो", "कीजिये": "करो",
+    "करते": "करो", "करता": "करो", "करती": "करो", "करनी": "करो",
+    "करोगे": "करो", "करेंगे": "करो", "करें": "करो",
+    # "sakna" (can/able to) -- auxiliary "can you" forms. Canonical target:
+    # "sakte" (existing spelling, 10 occurrences).
+    "sakta": "sakte", "sakti": "sakte", "sako": "sakte",
+    "sakoge": "sakte", "sakenge": "sakte",
+    "सकता": "सकते", "सकती": "सकते", "सको": "सकते",
+    "सकोगे": "सकते", "सकेंगे": "सकते",
+    # "dena" (to give/allow) -- used in wa_ok/pickup-logistics-style "send
+    # it"/"give it" requests. Canonical target: "do" (existing spelling, 17
+    # occurrences). Bare "do" itself is left as the target, not remapped --
+    # it's also the English word "do", and this table only ever normalizes
+    # INTO it, never rewrites it away, so the pre-existing English-collision
+    # risk (unchanged from before this fix) isn't made any worse.
+    "dena": "do", "dijiye": "do", "de": "do",
+    "देना": "दो", "दीजिए": "दो", "दीजिये": "दो", "दे": "दो",
+    # "karwana"/"karana" (causative -- "have someone do X") -- only used in
+    # want_human today ("insaan se baat karwao"/"karwa sakte hain"). Canonical
+    # target: "karwao" (existing spelling).
+    "karao": "karwao", "karwa": "karwao", "karwaoge": "karwao",
+    "कराओ": "करवाओ", "करवा": "करवाओ",
+}
+
+
 def _tokenize(text: str) -> list[str]:
     # Split on WHITESPACE ONLY, then trim punctuation off each token's edges —
     # deliberately not regex \w+/\b. Both \w and \b are unreliable inside
@@ -1010,7 +1082,7 @@ def _tokenize(text: str) -> list[str]:
     for raw in text.lower().split():
         tok = raw.strip(_TOKEN_EDGE_PUNCT)
         if tok:
-            tokens.append(tok)
+            tokens.append(_VERB_FORM_ALIASES.get(tok, tok))
     return tokens
 
 
@@ -1404,6 +1476,26 @@ def detect_intents(transcript: str) -> list[str]:
     # time since "busy" isn't centrally dispatched the way those are.
     if "callback_later" in matched and "busy" in matched:
         matched.remove("busy")
+    # Added 2026-08-19, found auditing the keyword.md coverage-widening merge:
+    # "kar do"/"de do" are wa_ok keywords (generic "do it"/"give it" -- meant
+    # to catch a bare approval to send WhatsApp), but they're also just the
+    # last two words of many unrelated imperative requests -- the new
+    # reschedule_appointment/cancel_appointment phrasings this merge added
+    # ("doosri date de do", "appointment cancel kar do", "shift kar do
+    # appointment") all end the same way. wa_ok sits earlier in
+    # route_objection()'s priority chain (checked unconditionally, no
+    # allowlist scoping like expensive/trust have), so confirmed live: a
+    # customer asking to cancel/reschedule their appointment got "Bilkul ji,
+    # abhi bhej rahi hoon WhatsApp par" (okay, sending the WhatsApp now) --
+    # a non-sequitur reply to an appointment-change request. Same suppression
+    # idiom as callback_later/busy above -- reschedule/cancel are always the
+    # more specific, more actionable signal when both match the same turn;
+    # wa_ok here would only ever have played an acknowledgment anyway (the
+    # actual WhatsApp send is triggered by fire_whatsapp() elsewhere in each
+    # flow, not gated on this intent), so suppressing it loses no real
+    # functionality.
+    if ("reschedule_appointment" in matched or "cancel_appointment" in matched) and "wa_ok" in matched:
+        matched.remove("wa_ok")
     return matched
 
 
@@ -2038,6 +2130,14 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     intents = detect_intents(t) if t else []
 
     logger.info(f"[{call_uuid}] fresh_cta transcript='{t[:60]}' intents={intents}")
+    # Added 2026-08-19 -- the other 3 handlers (react_a/b/c, call2, call3) all
+    # already emit this audit_event() record; fresh_cta never did, despite
+    # being the only campaign with real product-specific greetings. Confirmed
+    # during the keyword-matching audit: this meant fresh_cta turns were
+    # invisible to scripts/no_match_report.py (see that file), the only
+    # queryable record of which live turns matched no keyword at all.
+    audit_event(call_uuid, "route", turn=getattr(session, "turn_idx", session.turn_count),
+                state=session.react_state, campaign="fresh_cta", intents=intents, transcript=t)
 
     if t and not intents:
         if _LLM_REFUSAL_FALLBACK_ENABLED and await _llm_classify_refusal(t, call_uuid):

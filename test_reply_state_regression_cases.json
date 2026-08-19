@@ -2300,9 +2300,10 @@
   "call_tag": "react_b PRESENT_OFFER",
   "source": "real",
   "input": "हाँ मैडम, ले लेते हैं, कृष्णा फरीच से ही लेते हैं, लेकिन अभी थोड़ा सा बिजी था मैं, आप बाद में कॉल कर लीजिए प्लीज उसको। थैंक यू।",
+  "note": "Expected updated 2026-08-19 (verb-equivalence audit): the customer explicitly says 'aap baad mein call kar lijiye please' -- an unambiguous callback request, the same shape as Pratham's real 'kar sakte hain' phrase this session's callback_later fixes targeted. _VERB_FORM_ALIASES now generalizes 'kar lijiye' to the same canonical form as 'karo', so this correctly matches callback_later -- and per the pre-existing, deliberate busy-suppression rule in detect_intents() (same idiom used for not_interested vs busy/timing), 'busy' is suppressed in favor of the more specific 'callback_later' signal. This is the intended, business-correct outcome (route to the callback-time-ask reply, not the generic busy deflection), not a regression -- was 'busy' only before this session's callback_later work existed to catch this phrasing.",
   "expected": {
    "intents_contains": [
-    "busy"
+    "callback_later"
    ],
    "appointment_confirmed": false
   },
