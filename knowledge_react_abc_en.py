@@ -134,6 +134,15 @@ _SHARED_VOICED_EN = {
     "obj_person_unavailable_generic": "Oh, no problem at all. I'll try again a little later. Thank you for your time!",
     "obj_already_called_generic": "I'm sorry if we've called a bit too often — please don't mind. Just one more quick thing, then it's entirely up to you. Is that alright?",
     "obj_callback_later_generic": "Of course, I understand you're busy right now. Could you tell me what time would work better for you — later today, or tomorrow? I'll call you back at that time so it's convenient for you.",
+    # Added 2026-08-20 -- confirmed live: a real test call answered
+    # obj_callback_later_generic's "what time works?" in English ("call me
+    # in the evening around 6"), and the follow-up-turn reply
+    # (obj_callback_time_noted/unclear, added 2026-08-19 for the callback-
+    # scheduling MVP) had NO English translation at all -- the call hit
+    # "No text for key" and just went silent before hanging up. These two
+    # were missing entirely, not just uncached.
+    "obj_callback_time_noted": "Got it, I'll try to call you back around then. Thank you so much, have a great day!",
+    "obj_callback_time_unclear": "No problem at all, I'll try you again a little later. Thanks so much!",
     # route_objection() flips session.lang to "en" BEFORE calling play_key()
     # for lang_pref_english, so this is the copy that actually plays when a
     # caller asks for English -- the Hindi dict's version of this same key
