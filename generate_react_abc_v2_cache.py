@@ -60,6 +60,10 @@ FORCE_REGEN = {
     "ra_q_location", "rb_q_location", "rc_q_location",
     "ra_q_price_range", "rb_q_price_range", "rc_q_price_range",
 }
+# 2026-08-22 -- fresh_cta voice-consistency regen (Sarvam model drift fix,
+# all 34 FRESH_CTA_SCRIPT/FRESH_CALL2_SCRIPT/FRESH_CALL3_SCRIPT keys) ran
+# and completed here, 0 failures. Removed from FORCE_REGEN afterward, same
+# as the 2026-08-20 note above it used to be.
 
 # Keys removed from scripts — delete stale audio if present.
 # "ra_wa_cta" removed from this set 2026-08-18 -- it was re-added as a real,

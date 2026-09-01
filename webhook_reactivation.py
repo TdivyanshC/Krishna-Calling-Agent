@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import httpx
 from groq import AsyncGroq
 
-from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_INTENTS, SHARED_SCRIPT, PREFIX_VOICE_MAP, CALL2_SCRIPT, CALL3_SCRIPT, normalize_fresh_product_key
+from knowledge_react_abc import REACT_ABC_INTENTS, get_script, get_prefix, SHARED_INTENTS, SHARED_SCRIPT, PREFIX_VOICE_MAP, CALL2_SCRIPT, CALL3_SCRIPT, normalize_fresh_product_key, match_price_category, match_store_city, mentions_non_catalog_item, match_fresh_product, match_fresh_broad_category, _FRESH_PRODUCT_BROAD
 from knowledge_react_abc_en import get_script_en, SHARED_SCRIPT_EN, CALL2_SCRIPT_EN, CALL3_SCRIPT_EN, EN_SPEAKER
 from supabase_calling import mark_dnc_immediate
 from audit_log import audit_event
@@ -216,6 +216,17 @@ async def _vobiz_play(call_uuid: str, audio_url, turn: int = 0, kind: str = "rep
             # has resolved, so the two still reach Vobiz in the order
             # play_key() was called, even though neither blocks the caller.
             async with lock:
+                # Filler-finish gate: if a filler clip is still playing on
+                # this leg, hold this reply's Play until it finishes so
+                # Vobiz sequences them instead of chopping the filler
+                # mid-word. Only for real replies (a filler must never wait
+                # on itself), and capped so a stale entry can't stall a turn.
+                if kind == "reply":
+                    _ff = _filler_finish_at.pop(call_uuid, None)
+                    if _ff is not None:
+                        _gap = _ff - time.monotonic()
+                        if 0.05 < _gap <= 3.0:
+                            await asyncio.sleep(_gap)
                 client = await _get_http_client()
                 # httpx-native timeout, not asyncio.wait_for: wait_for cancels the
                 # request from outside httpx's transport, which can leave a stalled
@@ -307,16 +318,28 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
     if session is not None and (key.endswith("_offer_main") or key.endswith("_offer_explain")):
         session.offer_explained = True
 
-    if session is not None and log_transcript:
-        if not hasattr(session, "conversation"):
-            session.conversation = []
-        # Falls back to the shared dict for keys not in the active flow's
-        # own script (e.g. route_objection()'s obj_repeat_generic, which is
-        # flow-agnostic and deliberately not duplicated into every per-plan
-        # dict). Existing keys are unaffected -- they're always found in
-        # their primary script, so this fallback never triggers for them.
-        text = script.get(key) or shared.get(key) or key
-        session.conversation.append(("assistant", text))
+    # Falls back to the shared dict for keys not in the active flow's own
+    # script (e.g. route_objection()'s obj_repeat_generic, which is
+    # flow-agnostic and deliberately not duplicated into every per-plan
+    # dict). Existing keys are unaffected -- they're always found in their
+    # primary script, so this fallback never triggers for them.
+    _resolved_text = script.get(key) or shared.get(key) or key
+
+    # 2026-08-23 CONFIRMED-LIVE BUG (same class, see play_dynamic_text's
+    # comment): the conversation append used to happen HERE, before even
+    # checking whether this key resolves to a real cached file, let alone
+    # before a cache-miss's live-TTS-fallback succeeding -- so a genuinely
+    # uncached key whose live generation then failed would still get logged
+    # into the transcript as something the customer heard. Rare in practice
+    # (nearly every key call here hits the pre-generated static cache), but
+    # a real, uncached key is exactly the scenario this matters for. Moved
+    # to append only at each point where a URL is actually about to be
+    # returned, mirroring play_dynamic_text's fix.
+    def _log_turn():
+        if session is not None and log_transcript:
+            if not hasattr(session, "conversation"):
+                session.conversation = []
+            session.conversation.append(("assistant", _resolved_text))
 
     _turn = getattr(session, "turn_idx", None) if session else None
     if _turn is None:
@@ -328,6 +351,7 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
         audit_event(call_uuid, "tts", turn=_turn, key=key, cached=True)
         if session is not None:
             session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_file_duration(_static_wav_path(key, lang))
+        _log_turn()
         return url
 
     logger.warning(f"[{call_uuid}] CACHE MISS → {key} [{lang}] — generating live")
@@ -343,6 +367,7 @@ async def _resolve_key_url(call_uuid: str, key: str, session=None, log_transcrip
         if audio_url:
             if session is not None:
                 session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_bytes_duration(wav_bytes or b"")
+            _log_turn()
             return audio_url
     except Exception as exc:
         logger.error(f"[{call_uuid}] Live TTS failed for {key}: {exc}")
@@ -1870,6 +1895,17 @@ _REACT_LLM_REPROMPT_TEXT = "Oh, maaf kijiye ji — aapki awaaz thodi clear nahi 
 # needing to escalate rather than implying WhatsApp will have the answer.
 _REACT_LLM_UNKNOWN_TEXT = "Ohh, yeh accha sawaal hai ji — sach kahun toh iska sahi jawab main abhi confirm kar ke dena chahungi, taaki aapko kuch galat na bataun. Agar aap kahein, toh main hamari Customer Relations Head se aapke liye ek call schedule karwa deti hoon — woh aapko poora aur sahi jawab de dengi. Theek rahega?"
 
+# 2026-08-22 -- English versions, used only by fresh_cta's _try_fresh_llm_qa
+# so far (threaded via the new `lang` param below) -- the rest of the LLM-
+# fallback call sites (react_a/b/c/call2/call3) still default to lang="hi"
+# unchanged, since only fresh_cta's English path has been verified live.
+# Confirmed live 2026-08-22: an English-speaking caller's real question fell
+# through this whole pipeline with lang hardcoded to "hi" throughout --
+# generation prompt Hindi-only AND play_dynamic_text's TTS call Hindi-only
+# regardless of who was speaking -- closing that gap for fresh_cta here.
+_REACT_LLM_REPROMPT_TEXT_EN = "Oh, sorry — I didn't quite catch that clearly. Could you say that once more, please?"
+_REACT_LLM_UNKNOWN_TEXT_EN = "That's a good question — honestly, I'd like to confirm the exact answer before I tell you something wrong. If you're okay with it, I'll set up a call with our Customer Relations Head — she'll give you the complete, correct answer. Does that work?"
+
 # Added 2026-08-19 -- fresh_cta (product-follow-up campaign) audit found it
 # had ZERO LLM-fallback coverage, unlike react_a/b/c/call2/call3. Couldn't
 # just reuse _REACT_LLM_FACTS as-is: that block asserts "existing/purane
@@ -1884,18 +1920,36 @@ _REACT_LLM_UNKNOWN_TEXT = "Ohh, yeh accha sawaal hai ji — sach kahun toh iska 
 # explicitly UNKNOWN here, rather than risk the LLM asserting a discount
 # figure never actually communicated to this lead.
 _FRESH_LLM_FACTS = """STORE: Krishna Furniture. Priya (aap) ek lead ko follow-up call kar rahi hain jisne
-WhatsApp par ek specific product mein interest dikhaya tha (bed, sofa, wardrobe, ya dining set) -- yeh
-call sirf unhe store visit ke liye ek date confirm karwane ke liye hai, koi cold sales pitch nahi.
-CATEGORIES: sofa, bed, dining table, wardrobe.
-STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo):
-  - Sofa: ₹33,000 se shuru
-  - Bed: ₹71,000 se shuru
-  - Dining set: ₹1,19,000 se shuru
-SHOWROOMS: Sector 14 Gurgaon, Delhi, Noida — Monday se Sunday, subah 10 baje se raat 8 baje tak.
-NOT COVERED (explicitly UNKNOWN, never answer these, chahe kitna bhi simple lage): koi bhi discount
-percentage ya exchange-offer ke exact terms (is lead ko kaunsa offer specifically pitch hua tha, yeh yahan
-nahi diya gaya hai), EMI/installment, delivery cost ya time, warranty, online ordering, cash on delivery,
-old furniture buyback/exchange terms, payment methods, GST/tax, refund/return policy."""
+WhatsApp par ek specific product mein interest dikhaya tha -- yeh call ab budget, timeline, aur
+store-visit date poochhne ke liye hai, koi cold sales pitch nahi.
+CATEGORIES (real catalog, 2026-08-23): sofa, bed, wardrobe, dining set, office table, office chair,
+lobby/lounge chair, ottoman/pouffe, TV unit, bedroom chair, garden furniture, center/coffee table.
+Interior design consultation bhi available hai -- agar koi is baare mein poochhe, unka budget poochho
+aur bataao ki hamare manager unhe personally contact karenge (koi price/scope detail mat do, yeh sirf
+handoff hai).
+STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo -- kisi bhi cheez ka jo yahan nahi hai):
+  - Sofa: 3+2 seater ₹45,000 se, 7 seater ₹65,000 se
+  - Bed: ₹24,000 se, season wood wala ₹50,000 se
+  - Wardrobe: ₹24,000 se
+  - Dining set (4 seater): bina stone ₹35,000 se, stone ke saath ₹55,000 se
+  - Office table: ₹10,000 se
+  - Office chair: ₹4,500 se
+  - Lobby/lounge chair: ₹22,000 se
+  - Ottoman/pouffe: ₹4,000 se
+  - TV unit: ₹25,000 se
+  - Bedroom chair: ₹22,000 se
+  - Garden furniture: ₹25,000 se
+  - Center/coffee table: ₹20,000 se
+SHOWROOMS (real 5-store list, 2026-08-23): do stores Gurgaon mein (Atul Kataria Chowk, Sector 14, Old
+Delhi Road; aur Sector 69, Sohna Road, Vatika Chowk ke paas), ek Noida mein (A-2, Sector 10), ek
+Faridabad mein (Sector 28 Metro Station ke saamne), ek Delhi mein (Ghitorni).
+NOT COVERED (explicitly UNKNOWN, never answer these, chahe kitna bhi simple lage): koi bhi item jo
+upar CATEGORIES mein nahi hai (agar poochha jaaye toh keh do "iska price abhi available nahi hai,
+WhatsApp par confirm kar ke bataungi" -- kabhi number mat banao), koi bhi discount percentage ya
+exchange-offer ke exact terms (is lead ko kaunsa offer specifically pitch hua tha, yeh yahan nahi diya
+gaya hai), interior design ka price/scope, EMI/installment, delivery cost ya time, warranty, online
+ordering, cash on delivery, old furniture buyback/exchange terms, payment methods, GST/tax,
+refund/return policy, showroom timings (yeh yahan nahi diye gaye)."""
 
 
 def _build_classify_prompt(facts: str, utterance: str) -> str:
@@ -1930,7 +1984,25 @@ EXAMPLES (in exact examples ko follow karo):
 Sirf ek word mein jawab do: "ANSWERABLE" ya "UNKNOWN" ya "UNCLEAR"."""
 
 
-def _build_answer_prompt(facts: str, utterance: str) -> str:
+def _build_answer_prompt(facts: str, utterance: str, lang: str = "hi") -> str:
+    # 2026-08-22 -- lang="en" branch added for fresh_cta's bilingual Q&A
+    # fallback (see _REACT_LLM_UNKNOWN_TEXT_EN's comment). Only the
+    # generated ANSWER needs to switch language -- the FACTS block itself
+    # stays as-is (Hinglish facts read fine as grounding context regardless
+    # of the output language instructed).
+    if lang == "en":
+        return f"""You are Priya, speaking on the phone on behalf of Krishna Furniture.
+The customer asked a question whose answer is in the FACTS below.
+
+FACTS:
+{facts}
+
+Customer asked: "{utterance}"
+
+Based ONLY on these FACTS, in English, maximum 2 short sentences (20-25 words), like you're speaking
+on the phone — answer. Don't say anything not in these FACTS (price, availability, any fact). Don't
+be vague or generic (like "good rate" or "many options") if the exact fact isn't in FACTS — in that
+case say EXACTLY this: "{_REACT_LLM_UNKNOWN_TEXT_EN}". No extra explanation or prefix, just the answer."""
     return f"""Aap Priya hain, Krishna Furniture ki taraf se phone par baat kar rahi hain.
 Customer ne ek sawaal poocha hai jiska jawab neeche diye FACTS mein hai.
 
@@ -1946,7 +2018,24 @@ FACTS mein nahi hai — is case mein EXACTLY yeh bolo: "{_REACT_LLM_UNKNOWN_TEXT
 ya prefix mat do, sirf jawab bolo."""
 
 
-_REACT_LLM_GROUNDED_PRICES = {"₹33,000", "₹71,000", "₹1,19,000"}
+# Shared across ALL campaigns' LLM-fallback answer generation (checked
+# unconditionally in _llm_fallback_reply_impl, not scoped per campaign) --
+# react_a/b/c/call2/call3's exchange-offer prices and fresh_cta's real
+# furniture catalog prices both need to pass this same guard, so it's a
+# union of both, not a replacement of one by the other.
+_REACT_LLM_GROUNDED_PRICES = {
+    "₹33,000", "₹71,000", "₹1,19,000",  # react_a/b/c/call2/call3 exchange offer
+    # 2026-08-23 -- fresh_cta's real 12-category catalog (user-provided).
+    "₹45,000", "₹65,000",   # sofa (3+2 / 7 seater)
+    "₹24,000", "₹50,000",   # bed (standard / season wood)
+    "₹35,000", "₹55,000",   # dining (without / with stone) -- also wardrobe's ₹24,000, already listed
+    "₹10,000",              # office table
+    "₹4,500",               # office chair
+    "₹22,000",              # lobby/lounge chair, also bedroom chair
+    "₹4,000",               # ottoman/pouffe
+    "₹25,000",              # TV unit, also garden furniture
+    "₹20,000",              # center/coffee table
+}
 
 # Added 2026-08-14 -- confirmed live and reproduced directly (not a fluke):
 # fed "और ये।" ("and this") straight to _react_llm_classify() and it came
@@ -1976,12 +2065,42 @@ def _is_low_content_fragment(t: str) -> bool:
     return bool(tokens) and all(tok in _LOW_CONTENT_WORDS for tok in tokens)
 
 
+# Groq circuit breaker (2026-09-01). Groq's free tier has a hard daily token
+# cap; once hit, EVERY call 429s for the rest of the day ("try again in
+# 51m"). Without this, each mid-call question still paid the classify round-
+# trip (~1s) AND fired a filler before falling back -- confirmed live, a
+# whole test call of question turns each stalled ~5s on a filler then a
+# static "noted" line. When a 429 / rate-limit / quota error is seen, skip
+# Groq entirely for _GROQ_COOLDOWN_SECONDS: classify returns UNCLEAR
+# instantly (no network, no filler), the caller goes straight to its static
+# fallback. Self-heals when the cooldown lapses.
+_GROQ_COOLDOWN_SECONDS = 180.0
+_groq_cooldown_until = 0.0
+
+
+def _groq_in_cooldown() -> bool:
+    return time.monotonic() < _groq_cooldown_until
+
+
+def _note_groq_error(exc: Exception, call_uuid: str) -> None:
+    global _groq_cooldown_until
+    s = str(exc).lower()
+    if any(m in s for m in ("429", "rate_limit", "rate limit", "quota", "tokens per day")):
+        _groq_cooldown_until = time.monotonic() + _GROQ_COOLDOWN_SECONDS
+        logger.warning(
+            f"[{call_uuid}] Groq rate-limited -- LLM Q&A disabled for "
+            f"{_GROQ_COOLDOWN_SECONDS:.0f}s (falling back to static replies)"
+        )
+
+
 async def _react_llm_classify(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str:
     """Returns 'ANSWERABLE', 'UNKNOWN', or 'UNCLEAR' (defaults to UNCLEAR on any failure).
 
     `facts` added 2026-08-19 to support fresh_cta's own grounding
     (_FRESH_LLM_FACTS) -- defaults to _REACT_LLM_FACTS so every pre-existing
     call site (react_a/b/c/call2/call3) is unaffected."""
+    if _groq_in_cooldown():
+        return "UNCLEAR"
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
@@ -1999,24 +2118,27 @@ async def _react_llm_classify(t: str, call_uuid: str, facts: str = _REACT_LLM_FA
         return "UNCLEAR"
     except Exception as exc:
         logger.warning(f"[{call_uuid}] LLM fallback classify failed, treating as UNCLEAR: {exc}")
+        _note_groq_error(exc, call_uuid)
         return "UNCLEAR"
 
 
-async def _llm_fallback_reply_impl(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str | None:
+async def _llm_fallback_reply_impl(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS, lang: str = "hi") -> str | None:
+    _reprompt_text = _REACT_LLM_REPROMPT_TEXT_EN if lang == "en" else _REACT_LLM_REPROMPT_TEXT
+    _unknown_text  = _REACT_LLM_UNKNOWN_TEXT_EN if lang == "en" else _REACT_LLM_UNKNOWN_TEXT
     if _is_low_content_fragment(t):
         logger.info(f"[{call_uuid}] low-content fragment '{t}' -- skipping LLM classify entirely, treating as UNCLEAR")
-        return _REACT_LLM_REPROMPT_TEXT
+        return _reprompt_text
     label = await _react_llm_classify(t, call_uuid, facts=facts)
     if label == "UNCLEAR":
-        return _REACT_LLM_REPROMPT_TEXT
+        return _reprompt_text
     if label == "UNKNOWN":
-        return _REACT_LLM_UNKNOWN_TEXT
+        return _unknown_text
 
     try:
         resp = await asyncio.wait_for(
             _get_groq_async_client().chat.completions.create(
                 model="groq/compound-mini",
-                messages=[{"role": "user", "content": _build_answer_prompt(facts, t)}],
+                messages=[{"role": "user", "content": _build_answer_prompt(facts, t, lang=lang)}],
                 max_tokens=80,
                 temperature=0.2,
             ),
@@ -2032,6 +2154,7 @@ async def _llm_fallback_reply_impl(t: str, call_uuid: str, facts: str = _REACT_L
         return reply
     except Exception as exc:
         logger.warning(f"[{call_uuid}] LLM fallback answer generation failed: {exc}")
+        _note_groq_error(exc, call_uuid)
         return None
 
 
@@ -2048,7 +2171,7 @@ async def _llm_fallback_reply_impl(t: str, call_uuid: str, facts: str = _REACT_L
 _REACT_LLM_FALLBACK_HARD_TIMEOUT = 4.0
 
 
-async def llm_fallback_reply(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS) -> str | None:
+async def llm_fallback_reply(t: str, call_uuid: str, facts: str = _REACT_LLM_FACTS, lang: str = "hi") -> str | None:
     """
     Two-step fallback for a turn detect_intents() found nothing for.
     Classifies first; only ANSWERABLE ever reaches free-form generation
@@ -2062,10 +2185,13 @@ async def llm_fallback_reply(t: str, call_uuid: str, facts: str = _REACT_LLM_FAC
     call2/call3's exchange-offer grounding); fresh_cta passes _FRESH_LLM_FACTS
     instead, since it's a different campaign context (see that constant's
     comment for why the two can't just share one block).
+
+    `lang` added 2026-08-22 -- defaults to "hi" so every pre-existing call
+    site is unaffected; fresh_cta's _try_fresh_llm_qa passes session.lang.
     """
     try:
         return await asyncio.wait_for(
-            _llm_fallback_reply_impl(t, call_uuid, facts=facts),
+            _llm_fallback_reply_impl(t, call_uuid, facts=facts, lang=lang),
             timeout=_REACT_LLM_FALLBACK_HARD_TIMEOUT,
         )
     except asyncio.TimeoutError:
@@ -2073,7 +2199,42 @@ async def llm_fallback_reply(t: str, call_uuid: str, facts: str = _REACT_LLM_FAC
         return None
 
 
-async def play_dynamic_text(call_uuid: str, text: str, session=None, voice: str = "shreya") -> bool:
+async def _resolve_dynamic_url(call_uuid: str, text: str, voice: str = "shreya", lang: str = "hi") -> tuple[str | None, bytes | None]:
+    """
+    Resolves arbitrary text to a playable Sarvam TTS URL WITHOUT playing it
+    -- split out of play_dynamic_text 2026-08-23 so a dynamic answer and a
+    following static reprompt key can be combined into ONE Vobiz Play
+    request instead of two separate ones (see _play_dynamic_then_key()'s
+    docstring for why that matters). Returns (audio_url, wav_bytes), or
+    (None, None) on any failure/timeout -- caller decides what "no answer"
+    means for its own transcript-logging and fallback behavior.
+    """
+    try:
+        from tts_engine import get_speech
+        # Timeout raised 3.0 -> 6.5s, 2026-08-22: confirmed live this was
+        # firing routinely, not just on a slow outlier -- tts_engine.py's
+        # own docstring documents fresh (uncached) Sarvam generation as
+        # NORMALLY taking 3-6s ("Layer 3: Sarvam API — 3-6s"), so a 3.0s
+        # ceiling sat at the very bottom of the documented normal range and
+        # was structurally likely to abort on a large fraction of real
+        # answers, not just unusually slow ones. 6.5s covers the top of that
+        # documented range with a little margin. Tradeoff: worst-case dead
+        # air before falling back to a generic reprompt is now longer, but
+        # the prior alternative was silently discarding a real, already-
+        # generated answer roughly as often as not.
+        wav_bytes, audio_url, _ = await asyncio.wait_for(
+            get_speech(text, lang=lang, static_key=None, speaker=voice), timeout=6.5
+        )
+        if audio_url:
+            return audio_url, wav_bytes
+    except asyncio.TimeoutError:
+        logger.warning(f"[{call_uuid}] Dynamic TTS for LLM fallback exceeded 6.5s, aborting")
+    except Exception as exc:
+        logger.error(f"[{call_uuid}] Dynamic TTS for LLM fallback failed: {exc}")
+    return None, None
+
+
+async def play_dynamic_text(call_uuid: str, text: str, session=None, voice: str = "shreya", lang: str = "hi") -> bool:
     """
     Speaks arbitrary text live (Sarvam TTS, dynamic hash-keyed cache) rather
     than a pre-cached static key — for llm_fallback_reply()'s generated
@@ -2089,35 +2250,94 @@ async def play_dynamic_text(call_uuid: str, text: str, session=None, voice: str 
     the Pratham call (919911117660, campaign "ra"/"ritu"). Defaults to
     "shreya" only for any caller that genuinely doesn't have a campaign
     voice in scope.
+
+    `lang` added 2026-08-22, defaults to "hi" (every pre-existing call site
+    is unaffected) -- previously hardcoded unconditionally, so an English
+    caller whose question fell through to this path got a Hindi-rendered
+    reply regardless of what generated the text. fresh_cta's
+    _try_fresh_llm_qa now passes session.lang alongside the matching
+    English generation prompt (see _build_answer_prompt's lang branch) --
+    passing lang="en" here alone, without also generating English text,
+    would just mispronounce Hindi text in an English voice mode, so the two
+    always need to move together.
+
+    Single-URL callers only (7 pre-existing call sites across react_a/b/c/
+    call2/call3) -- fresh_cta's answer-then-reprompt pattern uses
+    _play_dynamic_then_key() instead, which combines both into one request.
     """
+    # 2026-08-23 CONFIRMED-LIVE BUG: session.conversation used to get the
+    # ("assistant", text) line appended HERE, unconditionally, before TTS
+    # synthesis was even attempted -- so when get_speech() itself timed out
+    # (confirmed live: the Pratham call's price-range answer, "Dynamic TTS
+    # for LLM fallback exceeded 6.5s, aborting"), the stored transcript
+    # recorded a reply the customer never actually heard a single word of.
+    # Anyone reading call_summaries.full_transcript later sees a
+    # conversation that doesn't match what was actually said on the call.
+    # Moved to only append once get_speech() has actually produced a real
+    # audio_url -- i.e., synthesis genuinely succeeded, not merely intended.
+    # Note this still can't guarantee Vobiz's leg actually rendered the
+    # audio end-to-end -- _vobiz_play() is deliberately fire-and-forget (see
+    # its own docstring) and always returns True once called, by design, to
+    # avoid adding dead air waiting on that HTTP round-trip. This fix closes
+    # the gap that's actually fixable from here: never claim a line was said
+    # when synthesis itself never completed.
+    _turn = getattr(session, "turn_idx", None) if session else None
+    if _turn is None:
+        _turn = getattr(session, "turn_count", 0) if session else 0
+    audio_url, wav_bytes = await _resolve_dynamic_url(call_uuid, text, voice, lang)
+    if audio_url:
+        if session is not None:
+            if not hasattr(session, "conversation"):
+                session.conversation = []
+            session.conversation.append(("assistant", text))
+            session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_bytes_duration(wav_bytes or b"")
+        audit_event(call_uuid, "tts", turn=_turn, key="llm_fallback_dynamic", cached=False)
+        return await _vobiz_play(call_uuid, audio_url, turn=_turn, kind="reply")
+    return False
+
+
+async def _play_dynamic_then_key(call_uuid: str, text: str, reprompt_key: str, session, voice: str, lang: str) -> bool:
+    """
+    Plays a dynamically-generated answer immediately followed by a static
+    reprompt key, combined into ONE Vobiz Play request -- NOT two separate
+    play_dynamic_text() + play_key() calls.
+
+    2026-08-23 CONFIRMED-LIVE BUG (Pratham call): _vobiz_play()'s own
+    docstring already documents that two separate Play requests fired in
+    quick succession let the SECOND interrupt/replace the FIRST on the
+    Vobiz leg -- confirmed back on 2026-08-13 for static-key pairs and
+    fixed there via play_keys() (one combined multi-URL request). The new
+    fresh_cta answer-then-reprompt pattern (_try_fresh_llm_qa and the
+    equivalent inline block in handle_fresh_cta_turn) reintroduced the
+    exact same bug shape by calling play_dynamic_text() then play_key() as
+    two separate calls -- Pratham reported "unable to tell furniture
+    categories" despite the answer being correctly generated and a Play
+    request logged as sent; the reprompt line fired ~2s later almost
+    certainly cut it off before he heard it. This combines both into one
+    request the same way play_keys() already does for static-only pairs.
+    """
+    _turn = getattr(session, "turn_idx", None) if session else None
+    if _turn is None:
+        _turn = getattr(session, "turn_count", 0) if session else 0
+
+    audio_url, wav_bytes = await _resolve_dynamic_url(call_uuid, text, voice, lang)
+    if not audio_url:
+        return False
+
+    # log_transcript=False matches this reprompt's existing behavior at
+    # every call site -- only the dynamic answer itself is logged as a real
+    # reply, not the follow-up question re-ask.
+    reprompt_url = await _resolve_key_url(call_uuid, reprompt_key, session, log_transcript=False)
+
     if session is not None:
         if not hasattr(session, "conversation"):
             session.conversation = []
         session.conversation.append(("assistant", text))
-    _turn = getattr(session, "turn_idx", None) if session else None
-    if _turn is None:
-        _turn = getattr(session, "turn_count", 0) if session else 0
-    try:
-        from tts_engine import get_speech
-        # Deliberately still lang="hi" unconditionally -- this is the LLM
-        # grounded-answer fallback path (_llm_fallback_reply_impl and its
-        # FACTS/classify/generation prompts) which is Hindi-only and NOT
-        # part of the 2026-08-18 bilingual pass; see _REACT_LLM_UNKNOWN_TEXT's
-        # comment. An English-speaking caller whose question falls through to
-        # this path will still hear a Hindi-generated answer for now.
-        wav_bytes, audio_url, _ = await asyncio.wait_for(
-            get_speech(text, lang="hi", static_key=None, speaker=voice), timeout=3.0
-        )
-        if audio_url:
-            if session is not None:
-                session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_bytes_duration(wav_bytes or b"")
-            audit_event(call_uuid, "tts", turn=_turn, key="llm_fallback_dynamic", cached=False)
-            return await _vobiz_play(call_uuid, audio_url, turn=_turn, kind="reply")
-    except asyncio.TimeoutError:
-        logger.warning(f"[{call_uuid}] Dynamic TTS for LLM fallback exceeded 3.0s, aborting")
-    except Exception as exc:
-        logger.error(f"[{call_uuid}] Dynamic TTS for LLM fallback failed: {exc}")
-    return False
+        session.turn_audio_duration = getattr(session, "turn_audio_duration", 0.0) + _wav_bytes_duration(wav_bytes or b"")
+    audit_event(call_uuid, "tts", turn=_turn, key="llm_fallback_dynamic", cached=False)
+
+    urls = [audio_url] + ([reprompt_url] if reprompt_url else [])
+    return await _vobiz_play(call_uuid, urls, turn=_turn, kind="reply")
 
 
 def _pick_llm_filler_key(t: str, voice: str) -> str:
@@ -2156,6 +2376,15 @@ async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
     _turn = getattr(session, "turn_idx", None) if session else None
     if _turn is None:
         _turn = getattr(session, "turn_count", 0) if session else 0
+    # Record when this filler clip is expected to finish so the real reply's
+    # Play (via _vobiz_play, kind="reply") waits it out instead of cutting
+    # it. +0.25s covers Vobiz's own start latency on the leg.
+    try:
+        _fdur = _wav_file_duration(_static_wav_path(key, lang))
+    except Exception:
+        _fdur = 0.0
+    if _fdur > 0:
+        _filler_finish_at[call_uuid] = time.monotonic() + _fdur + 0.25
     asyncio.create_task(_vobiz_play(call_uuid, url, turn=_turn, kind="filler"))
 
 
@@ -2176,11 +2405,29 @@ async def _fire_llm_filler(call_uuid: str, t: str, session, voice: str) -> None:
 # latency distribution -- audit_event() already logs per-call "tts"/
 # "play_result" elapsed times, so this is tunable later against real data if
 # it turns out to fire too often or too rarely.
-_FILLER_GRACE_SECONDS = 0.45
+#
+# 2026-09-01 -- raised 0.45 -> 0.75. At 0.45 the classify-only fast path
+# (routinely sub-second on Groq) still lost the race often enough that the
+# filler fired and then got chopped ~0.3s later by the real reply -- the
+# exact "filler cut, sounds terrible" complaint, just moved slightly. 0.75
+# lets almost every fast reply land BEFORE a filler is ever committed, so a
+# filler now only plays when there's a genuine multi-second wait to cover.
+# The filler-finish gate in _vobiz_play() then keeps the reply from cutting
+# even that one short.
+_FILLER_GRACE_SECONDS = 0.75
+
+# call_uuid -> monotonic timestamp at which the last-fired filler clip on
+# this leg is expected to finish playing. Set when a filler Play is issued
+# (_fire_llm_filler); read once by _vobiz_play() before it sends a "reply"
+# Play, so the reply waits out the filler instead of interrupting it on the
+# Vobiz leg (Vobiz REPLACES current playback rather than queuing -- see
+# _vobiz_play()'s docstring). Best-effort: a stale entry can only ever add a
+# sub-3s wait, and it's cleared as soon as it's consumed or expires.
+_filler_finish_at: dict[str, float] = {}
 
 
 async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str,
-                                     facts: str = _REACT_LLM_FACTS) -> str | None:
+                                     facts: str = _REACT_LLM_FACTS, lang: str = "hi") -> str | None:
     """
     Runs llm_fallback_reply() and only plays a filler if it's still pending
     past _FILLER_GRACE_SECONDS -- see that constant's docstring for why this
@@ -2191,8 +2438,11 @@ async def _llm_fallback_with_filler(call_uuid: str, t: str, session, voice: str,
     already made it redundant.
 
     `facts` threaded through 2026-08-19 for fresh_cta's _FRESH_LLM_FACTS.
+    `lang` threaded through 2026-08-22, defaults to "hi" (unchanged for
+    every pre-existing caller); fresh_cta's _try_fresh_llm_qa passes
+    session.lang so an English caller's answer generates in English.
     """
-    llm_task = asyncio.create_task(llm_fallback_reply(t, call_uuid, facts=facts))
+    llm_task = asyncio.create_task(llm_fallback_reply(t, call_uuid, facts=facts, lang=lang))
     done, _pending = await asyncio.wait({llm_task}, timeout=_FILLER_GRACE_SECONDS)
     if llm_task in done:
         return llm_task.result()
@@ -2359,6 +2609,64 @@ def _is_vague_time_without_commitment(t: str) -> bool:
     return not bool(token_set & _VISIT_COMMITMENT_TOKENS)
 
 
+# "I'm just browsing / I'll think about it / not right now" answers to the
+# visit-date ask. Several of these (देख रहा हूँ, सोच कर बताता हूँ) match no
+# detect_intents() category at all, so the fresh_cta VISIT_DATE handler needs
+# an explicit phrase check or it would treat them as a date answer and
+# fake-confirm a hot appointment. Substring match on a hyphen-normalised,
+# lowercased transcript -- same lightweight style as _QUESTION_MARKERS.
+_NONCOMMITTAL_VISIT_PHRASES = (
+    "देख रहा", "देख रही", "देख रहे", "dekh raha", "dekh rahi", "dekh rahe",
+    "बस देख", "सिर्फ देख", "केवल देख", "sirf dekh", "bas dekh", "just look",
+    "just brows", "browsing", "सोच कर", "सोचकर", "सोच के बता", "soch kar",
+    "soch ke bata", "sochkar", "think about", "let me think", "abhi nahi",
+    "अभी नहीं", "abhi kuch nahi", "अभी कुछ नहीं", "pata nahi", "पता नहीं",
+    "baad me", "बाद में", "later batata", "abhi decide nahi",
+)
+
+
+def _is_noncommittal_visit_reply(t: str) -> bool:
+    tl = (t or "").lower().replace("-", " ")
+    return any(p in tl for p in _NONCOMMITTAL_VISIT_PHRASES)
+
+
+# A VAGUE date RANGE ("next weekend", "agle hafte", "kuch din mein") -- a
+# real intent to visit, but no specific day. The fresh_cta flow should
+# acknowledge (details -> WhatsApp) and pin the exact day before confirming
+# an appointment against it, rather than booking "next weekend" as if it
+# were "Saturday 3pm". Only treated as vague when NO concrete day/date is
+# also named in the same utterance ("next weekend, Saturday" is specific).
+_VAGUE_DATE_RANGE_PHRASES = (
+    "weekend", "वीकेंड", "वीक एंड", "week end",
+    "next week", "नेक्स्ट वीक", "coming week", "in a week", "within the week",
+    "agle hafte", "अगले हफ्ते", "agla hafta", "अगला हफ्ता", "hafte bhar",
+    "हफ्ते भर", "is hafte", "इस हफ्ते", "इस हफ़्ते",
+    "next month", "agle mahine", "अगले महीने", "agle maheene",
+    "kuch din", "कुछ दिन", "kuch dino", "कुछ दिनों", "few days",
+    "couple of days", "couple days", "ek do din", "एक दो दिन",
+)
+_SPECIFIC_DAY_TOKENS = {
+    "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "somvar", "mangalvar", "budhvar", "guruvar", "shukravar", "shanivar",
+    "ravivar", "itvar", "itwar",
+    "सोमवार", "मंगलवार", "बुधवार", "गुरुवार", "शुक्रवार", "शनिवार", "रविवार",
+    "इतवार", "सैटरडे", "संडे", "सन्डे", "मंडे", "मन्डे", "ट्यूज़डे", "ट्यूजडे",
+    "वेडनेसडे", "थर्सडे", "फ्राइडे",
+    "kal", "aaj", "parso", "kalh", "today", "tomorrow", "tmrw",
+    "कल", "आज", "परसों",
+}
+
+
+def _is_vague_date_range(t: str) -> bool:
+    tl = (t or "").lower().replace("-", " ")
+    if not any(p in tl for p in _VAGUE_DATE_RANGE_PHRASES):
+        return False
+    toks = set(_tokenize(tl))
+    if toks & _SPECIFIC_DAY_TOKENS or _has_date_context_digit(t):
+        return False  # a concrete day/date is also present -> specific enough
+    return True
+
+
 async def handle_followup_wa_turn(session, transcript: str, call_uuid: str) -> bool:
     if not hasattr(session, "followup_played"):
         session.followup_played = False
@@ -2378,6 +2686,177 @@ async def handle_followup_wa_turn(session, transcript: str, call_uuid: str) -> b
     return False
 
 
+# 2026-08-20 -- found live while testing the sequential step machine below:
+# a genuine question asked mid-sequence ("aapke paas king size bed hai kya")
+# has empty detect_intents() output, same as a plain data answer ("50 hazar
+# tak") -- both are indistinguishable by intents alone. Without this check,
+# the step machine silently swallowed real questions as if they were the
+# answer to whatever it had just asked (confirmed: stored the literal
+# question text as session.lead["budget"], then moved straight to asking
+# urgency, never answering it). Cheap local marker-match, same
+# Latin/Devanagari/phonetic-Devanagari triple-form convention as
+# detect_intents()'s keyword lists -- imperfect (a phrasing with none of
+# these markers still won't detour), but far better than swallowing every
+# question that does happen to use one of them.
+#
+# Widened same day after user-directed verification against a batch of
+# realistic product-detail phrasings ("kis tarah ke sofa hai aapke paas",
+# "fabric options kya hai", "sofa kis kis colour mein milta hai") turned up
+# 4/15 real questions the first pass missed entirely. Biased toward broader
+# coverage over precision here deliberately: this function is only ever
+# reached (see _try_fresh_llm_qa's callers) after the matching
+# extract_budget()/extract_urgency()/product-match has ALREADY failed, so a
+# false positive just costs one extra "let me check" LLM round-trip and a
+# repeated question -- mildly redundant, not broken. A false negative means
+# a real question gets silently swallowed as data, the worse failure mode.
+_QUESTION_MARKERS = (
+    "hai kya", "milta hai kya", "milte hai kya", "hota hai kya", "hote hain kya",
+    "milta hai", "milte hain", "milti hai", "aata hai kya", "aate hain kya",
+    "available hai", "available hain", "kaunsa", "kaunse", "kaunsi",
+    "kis tarah", "kis type", "kis kism", "kis prakar", "kis colour", "kis rang",
+    "kis size", "size kya", "colour kya", "color kya", "material kya",
+    "kitne type", "kitni tarah", "kitne prakar", "kya kya", "options kya", "option kya",
+    "kaun kaun", "kaun sa", "kaun se",
+    "which size", "what size", "what kind", "what type", "do you have", "is there",
+    "what colour", "what color", "what material", "what options",
+    "है क्या", "मिलता है क्या", "मिलते है क्या", "होता है क्या", "होते हैं क्या",
+    "मिलता है", "मिलते हैं", "मिलती है", "आता है क्या", "आते हैं क्या",
+    "अवेलेबल है", "अवेलेबल हैं", "कौनसा", "कौनसे", "कौनसी", "कौन कौन", "कौन सा", "कौन से",
+    "किस तरह", "किस टाइप", "किस किस्म", "किस प्रकार", "किस कलर", "किस रंग",
+    "किस साइज", "साइज़ क्या", "साइज क्या", "कलर क्या", "मटेरियल क्या",
+    "कितने टाइप", "कितनी तरह", "क्या क्या", "ऑप्शन क्या", "ऑप्शंस क्या",
+    "व्हिच साइज", "व्हाट काइंड", "व्हाट टाइप", "डू यू हैव", "इज़ देयर",
+    "व्हाट कलर", "व्हाट मटेरियल", "व्हाट ऑप्शंस",
+)
+
+
+# 2026-08-22 -- token-based fallback for _looks_like_question(), added after
+# a real call where the exact-substring marker list missed "what will be
+# the options in the bed I will be getting?" and "what are the options"
+# (both have "what"..."options" separated by inserted words -- "will be
+# the"/"are the" -- so no fixed-phrase marker matches word-for-word).
+# Exact-phrase markers keep chasing every new insertion pattern
+# indefinitely; checking word CO-OCCURRENCE instead (an interrogative word
+# together with a noun it's plausibly asking about, regardless of what's
+# between them) generalizes across insertions without enumerating them.
+# English-only for now (English STT text tokenizes cleanly on whitespace;
+# Hindi/Hinglish already has broad substring coverage above and its
+# grammar doesn't insert words between question-word and noun the same way).
+_QUESTION_WORDS_EN = {"what", "which", "kaunsa", "kaunse"}
+_QUESTION_NOUNS_EN = {"options", "option", "kind", "kinds", "type", "types",
+                      "colour", "colours", "color", "colors", "material",
+                      "materials", "size", "sizes", "variety", "varieties"}
+
+
+def _looks_like_question(t: str) -> bool:
+    # Confirmed live 2026-08-22: STT sometimes renders a reduplicated word
+    # ("kya kya" / "kaun kaun") with a hyphen instead of a space ("क्या-क्या",
+    # "कौन-कौन") -- a real question slipped through undetected because the
+    # marker list only had the space-separated form. Normalize hyphens to
+    # spaces before matching instead of duplicating every marker twice.
+    tl = t.lower().replace("-", " ")
+    if any(m in tl for m in _QUESTION_MARKERS):
+        return True
+    tokens = set(_tokenize(tl))
+    return bool(tokens & _QUESTION_WORDS_EN) and bool(tokens & _QUESTION_NOUNS_EN)
+
+
+async def _try_fresh_llm_qa(call_uuid: str, t: str, session, reprompt_key: str) -> bool:
+    """
+    Fresh_cta's LLM Q&A fallback (grounded in _FRESH_LLM_FACTS), scoped for
+    use INSIDE the sequential step machine below -- only fires when the text
+    heuristically looks like a real question (see _looks_like_question),
+    not merely because detect_intents() found nothing (that's the common
+    case for a perfectly valid data answer too, e.g. a bare budget figure).
+    Returns True if the turn was handled -- either it answered + reprompted,
+    OR (2026-09-01) it played the fresh_qa_unavailable acknowledgment + the
+    pending-question re-ask as one sequenced Play. Either way the caller
+    should `return True` immediately. Returns False only when there was
+    nothing to answer (not a question / bare filler) OR the LLM pipeline
+    hiccuped in a way that isn't the customer's fault (_REACT_LLM_REPROMPT_
+    TEXT) -- in both False cases nothing was played and the caller proceeds
+    with its own default handling (e.g. capturing the text as a raw answer).
+    """
+    if _is_filler_continuer(t) or not _looks_like_question(t):
+        return False
+    _fresh_voice = PREFIX_VOICE_MAP.get("fresh", "simran")
+    # 2026-08-22 -- bilingual: session.lang drives BOTH the generation
+    # prompt's output language (_build_answer_prompt's lang branch, via
+    # llm_fallback_reply) AND the TTS render language, so an English caller
+    # gets an English-generated answer spoken in English, not a Hindi
+    # answer or a Hindi-text-in-English-voice mismatch.
+    _lang = "en" if getattr(session, "lang", "hi") == "en" else "hi"
+    llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _fresh_voice, facts=_FRESH_LLM_FACTS, lang=_lang)
+    # 2026-08-22 CONFIRMED-LIVE BUG: llm_fallback_reply() returns
+    # _REACT_LLM_REPROMPT_TEXT (Hindi/English) not just when the customer's
+    # speech was genuinely unclear, but ALSO whenever the classify step
+    # itself throws (Groq API error/timeout/rate-limit) -- _react_llm_classify
+    # defaults to "UNCLEAR" on any exception, same text either way. STT
+    # already transcribed the turn correctly (that's what `t` is); an LLM-
+    # pipeline hiccup is not evidence the customer wasn't understood, and
+    # playing "I didn't catch that clearly" is an outright false claim.
+    # Worse: treating this fallback text as a real "answer" made
+    # _try_fresh_llm_qa return True, which skipped the caller's own
+    # extract_budget()/extract_urgency() capture for that turn entirely --
+    # confirmed live, a Groq 429 mid-call silently discarded a customer's
+    # real stated budget range instead of just failing to answer their
+    # question. Treat this specific fallback text as "no real answer" (same
+    # as any other failure) so the caller still runs its own extraction/
+    # capture on the turn instead of losing it.
+    if llm_answer in (_REACT_LLM_REPROMPT_TEXT, _REACT_LLM_REPROMPT_TEXT_EN):
+        return False
+    # 2026-08-23 -- combined into one Play request (_play_dynamic_then_key)
+    # instead of two separate play_dynamic_text() + play_key() calls -- see
+    # that helper's docstring: two separate Play requests fired in quick
+    # succession let the second cut off the first before the customer hears
+    # it. Confirmed live: Pratham's furniture-categories answer was
+    # correctly generated and "played" per the logs, but he never actually
+    # heard it -- the reprompt fired ~2s later and silently interrupted it.
+    if llm_answer and await _play_dynamic_then_key(call_uuid, llm_answer, reprompt_key, session, _fresh_voice, _lang):
+        return True
+    # Real question, no answer generated/played in time (Sarvam dynamic-TTS
+    # latency or a Groq failure). fresh_qa_unavailable is a pre-cached STATIC
+    # key so it plays instantly regardless of Groq/Sarvam state -- always
+    # acknowledge before moving on, so the customer hears something
+    # responsive rather than being ignored (confirmed live: silent fall-
+    # through here FOUR turns running, then the customer hung up).
+    #
+    # 2026-09-01 -- acknowledgment + the pending-question re-ask now go out
+    # as ONE sequenced Vobiz Play (play_keys) and this returns True, ending
+    # the turn. It used to play only fresh_qa_unavailable and return False,
+    # leaving the caller to fire a SECOND separate play_key() for the
+    # re-ask -- that, plus the LLM filler already in flight, was three Plays
+    # in ~4s each cutting the previous one mid-word (confirmed live on the
+    # BUDGET/URGENCY steps). Trade-off: a turn that both asked a question
+    # AND stated real data ("if my budget is 50k, what do I get") no longer
+    # captures that data on this turn -- but the customer is being re-asked
+    # the same question anyway and will normally restate it, and the old
+    # chopped-audio behavior is exactly what was reported as broken.
+    await play_keys(call_uuid, ["fresh_qa_unavailable", reprompt_key],
+                    session, log_transcript=[False, False])
+    return True
+
+
+def _fresh_step_question_key(fresh_step: str | None) -> str:
+    """
+    Which key re-asks whatever question is currently pending in fresh_cta's
+    sequential budget/urgency/visit-date step machine (see
+    handle_fresh_cta_turn) — used by the LLM-fallback trailing reprompt and
+    the generic catch-all reask so a customer who asks an unrelated question
+    or says something unparseable mid-sequence gets steered back to the
+    actual pending question, not always the same generic fresh_objection
+    line. Falls back to "fresh_objection" for VISIT_DATE and None (the
+    latter covers call_cycle 2/3, where the step machine never activates —
+    same behavior as before this feature existed).
+    """
+    return {
+        "AWAIT_FIRST_REPLY": "fresh_ask_budget",
+        "BUDGET":            "fresh_ask_budget",
+        "URGENCY":           "fresh_ask_urgency",
+        "INTERIOR_BUDGET":   "fresh_interior_budget_ask",
+    }.get(fresh_step, "fresh_objection")
+
+
 async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> bool:
     """
     fresh_cta funnel — no GREETING/OFFER/CTA buildup, enters directly at the
@@ -2390,9 +2869,55 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     of this function is processing the customer's reply to that already-played
     line.
     """
+    # Moved above the init-once block below so it's available for
+    # session.fresh_step's initial value — purely reads session.fresh_product
+    # (set once at call start via _session_meta), no session mutation, safe
+    # to compute this early. Re-derives the same product key /answer-outbound
+    # used to pick the initial greeting rather than trusting the raw
+    # query-param string is one of the known values.
+    _raw_product = getattr(session, "fresh_product", "") or ""
+    _product_key = normalize_fresh_product_key(_raw_product)
+
     if not hasattr(session, "dnc"):
         session.dnc = False
         session.react_state = "APPOINTMENT"  # for call_summaries reporting only — no other state exists in this funnel
+
+    # 2026-08-20 — deliberately separate guards from the dnc block above, not
+    # folded into it: make_session() (test_objection_routing.py) always
+    # pre-sets session.dnc, so a combined guard would silently skip
+    # initializing these two for every test session (and any other caller
+    # that pre-populates dnc but not these). Independent hasattr checks make
+    # each safe regardless of how the session was constructed.
+    #
+    # session.lead is read unconditionally by finalize_call()
+    # (supabase_calling.py) for every campaign already — populating it here
+    # (product/budget/urgency below) feeds call_summaries.product_interest/
+    # budget_mentioned/urgency_mentioned with zero new plumbing, same dict
+    # shape react_a/b/c already use.
+    if not hasattr(session, "lead"):
+        session.lead = {"product": _product_key} if _product_key else {}
+
+    if not hasattr(session, "fresh_step"):
+        # New sequential budget/urgency/visit-date flow. Call-1 only:
+        # call_cycle 2/3 keep their original single-purpose "just confirm a
+        # date" flow (their own greeting already asks for a date directly —
+        # see webhook.py's fresh_c2_greet_*/fresh_c3_greet_* dispatch)
+        # rather than re-asking budget/urgency a lead may have already
+        # answered, or that reads oddly as a second/third follow-up.
+        # "AWAIT_FIRST_REPLY" (not "BUDGET") because turn 1's reply is
+        # answering the greeting's open "what are you looking for / how can
+        # I help" line, not yet a specific question — see the step-machine
+        # dispatch further down for how this advances.
+        #
+        # 2026-08-22 CONFIRMED-LIVE BUG: this used to check `is None`, but a
+        # real call_cycle 1 session has session.call_cycle == "" (empty
+        # string, set at webhook.py:1839 via _meta.get("call_cycle", "")),
+        # never Python None -- "" is None is False, so the step machine was
+        # DISABLED on every real call-1 (the one case it needed to cover)
+        # and every turn silently fell through to the old flat flow the
+        # entire time this was live. Falsy-check instead, so "" and None
+        # both correctly mean call 1; only a real "2"/"3" string disables it.
+        session.fresh_step = "AWAIT_FIRST_REPLY" if not getattr(session, "call_cycle", None) else None
 
     session.turn_count = getattr(session, "turn_count", 0) + 1
     session.turn_audio_duration = 0.0
@@ -2416,6 +2941,26 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
         session.conversation.append(("user", t))
         return True
 
+    # 2026-08-29 CONFIRMED-LIVE BUG, severe: webhook.py's WS transcript
+    # handler only increments session.turn_count_substantive for campaigns
+    # that fall through to its generic tail -- fresh_cta's dispatch (like
+    # followup_wa's) `return`s right after calling this handler, so that
+    # shared increment code is NEVER reached. session.turn_count_substantive
+    # therefore stayed permanently 0 for every fresh_cta call, no matter how
+    # many real turns happened, which made _hard_cap_reason()'s
+    # "duration_cap_close" branch (meant only for a genuinely dead/stuck
+    # call with ZERO real speech) fire on EVERY fresh_cta call that simply
+    # ran past 180 seconds -- confirmed live: a real test call with 12
+    # substantive turns of active price/category/location Q&A got force-
+    # closed at 212s with reason=duration_cap_close, turn_count=12. The
+    # other 3 handlers (react_a/b/c, call2, call3) already increment this
+    # counter themselves internally for the same reason -- fresh_cta and
+    # followup_wa never did. Mirrors handle_reactivation_turn's placement:
+    # after the empty/IVR-fragment early-returns, for any real remaining
+    # speech.
+    if t:
+        session.turn_count_substantive = getattr(session, "turn_count_substantive", 0) + 1
+
     intents = detect_intents(t) if t else []
 
     logger.info(f"[{call_uuid}] fresh_cta transcript='{t[:60]}' intents={intents}")
@@ -2428,7 +2973,19 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     audit_event(call_uuid, "route", turn=getattr(session, "turn_idx", session.turn_count),
                 state=session.react_state, campaign="fresh_cta", intents=intents, transcript=t)
 
-    if t and not intents:
+    # 2026-08-20 — a turn where fresh_step is one of the new sequential
+    # question-answer steps expects free-form speech (a budget figure, a
+    # timeframe, a plain product name) that will very often match NONE of
+    # detect_intents()'s keyword categories — that's normal, not a failure
+    # to understand. Without this guard, a bare "50 hazar" or "next week"
+    # answer would increment not_understood_streak/total same as genuine
+    # gibberish, and 3 such answers in a row would incorrectly close the
+    # call via the not_understood cap before the sequence ever finished.
+    _expects_freeform_answer = getattr(session, "fresh_step", None) in (
+        "AWAIT_FIRST_REPLY", "BUDGET", "URGENCY", "INTERIOR_BUDGET",
+    )
+
+    if t and not intents and not _expects_freeform_answer:
         if _LLM_REFUSAL_FALLBACK_ENABLED and await _llm_classify_refusal(t, call_uuid):
             logger.info(f"[{call_uuid}] fresh_cta LLM refusal-classify fired on unrecognized utterance '{t[:60]}' — treating as not_interested")
             intents = ["not_interested"]
@@ -2447,18 +3004,51 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     if t:
         session.conversation.append(("user", t))
 
-    # Same product-key derivation /answer-outbound uses to pick the initial
-    # greeting (session.fresh_product is the raw query-param string threaded
-    # through via _session_meta — not pre-validated, so re-check it here
-    # exactly the same way rather than trusting it's one of the 4 known values).
-    _raw_product = getattr(session, "fresh_product", "") or ""
-    _product_key = normalize_fresh_product_key(_raw_product)
-
     # Hard decline — "not_interested" per spec; "dnc" folded in too (same
     # top-priority hard-stop convention every other handler in this file uses).
     # Reuses react_a's cached DNC audio directly — no new fresh_dnc key, per spec.
     if await check_hard_rejection(session, call_uuid, intents, "ra_dnc", also_reject_on=("not_interested",)):
         return False
+
+    # 2026-08-20 — interior-design branch: a distinct funnel exit, not a
+    # furniture objection, so it's checked above route_objection() and
+    # independent of session.fresh_step/call_cycle (a retry customer raising
+    # this is just as real as a first-call one). Exactly one budget question,
+    # then a manager handoff — no urgency/visit-date asks for this path, per
+    # spec. Checked in two parts: continuation first (we already asked the
+    # budget question last turn, so THIS turn's text is the answer,
+    # regardless of what intents matched), then fresh entry.
+    if getattr(session, "fresh_step", None) == "INTERIOR_BUDGET":
+        from webhook import extract_budget
+        _budget = extract_budget(t)
+        _is_question = _looks_like_question(t)
+        # 2026-08-22 CONFIRMED-LIVE BUG: `_budget is None` alone as the only
+        # gate meant a genuine question containing a number that happens to
+        # parse as a budget ("agar 50 hazar ka budget ho toh...") would get
+        # silently accepted as the answer instead of detouring to answer it.
+        # OR-ing in _looks_like_question(t) closes that regardless of
+        # whether extraction succeeded.
+        if (_budget is None or _is_question) and await _try_fresh_llm_qa(call_uuid, t, session, "fresh_interior_budget_ask"):
+            return True
+        # 2026-08-29 -- same fix as the BUDGET/URGENCY steps above, and even
+        # more consequential here: falling through on a failed-to-answer
+        # question wouldn't just record bad data, it would fire the
+        # manager handoff (fresh_interior_handoff, lead_tier_override=hot)
+        # on a question the customer never got an answer to. Re-ask instead.
+        if _budget is None and _is_question:
+            await play_key(call_uuid, "fresh_interior_budget_ask", session)
+            return True
+        session.lead["budget"] = _budget or t
+        session.lead["interest_type"] = "interior_design"
+        session.lead_tier_override = "hot"
+        session.fresh_step = "INTERIOR_HANDOFF_DONE"
+        await play_key(call_uuid, "fresh_interior_handoff", session)
+        return False
+
+    if "interior_design" in intents and getattr(session, "fresh_step", None) != "INTERIOR_HANDOFF_DONE":
+        session.fresh_step = "INTERIOR_BUDGET"
+        await play_key(call_uuid, "fresh_interior_budget_ask", session)
+        return True
 
     _obj_result = await route_objection(session, call_uuid, "fresh", session.react_state, intents, t)
     if _obj_result is not None:
@@ -2469,13 +3059,78 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     _has_digit      = _has_date_context_digit(t)
     _has_day_suffix = _has_standalone_day_suffix(t)
     if ("appointment_confirm" in intents or _has_digit or _has_day_suffix) and not _is_appointment_deferral(t) and not _is_timing_question(t) and not _is_vague_time_without_commitment(t):
+        # Vague range ("next weekend", "agle hafte") with no concrete day:
+        # don't book against it -- acknowledge (details -> WhatsApp) and ask
+        # for the exact day. The customer's NEXT reply is what gets
+        # confirmed. Only once per call: a second vague answer is accepted
+        # as-is rather than looping.
+        if _is_vague_date_range(t) and not getattr(session, "visit_day_clarify_asked", False):
+            session.visit_day_clarify_asked = True
+            await play_key(call_uuid, "fresh_ask_visit_day", session)
+            return True
         session.appointment_confirmed = True
         session.visit_date_raw_text   = t
+        session.lead["visit_date"]    = t
         session.lead_tier_override    = "hot"
         session.lead_score_override   = 85
         await play_key(call_uuid, "fresh_appointment_confirmed", session)
         await asyncio.sleep(3.0)
         return False
+
+    # Specific product named ("L-shape sofa", "recliner", "6 seater dining")
+    # 2026-09-01. Krishna Furniture has no short category menu -- a named item
+    # gets an instant "yes we have it" (fresh_have_{key}), and a price
+    # question about it pivots straight to WhatsApp + a store visit
+    # (fresh_price_wa), per explicit instruction. Checked before the generic
+    # busy/price/categories branches; after appointment_confirm so
+    # "L-shape sofa Saturday ko dekhne aaunga" still books.
+    _fresh_prod = match_fresh_product(t)
+    if _fresh_prod:
+        session.lead["product_detail"] = _fresh_prod
+        _bcat = _FRESH_PRODUCT_BROAD.get(_fresh_prod)
+        if _bcat and not session.lead.get("product"):
+            session.lead["product"] = _bcat
+        _step = getattr(session, "fresh_step", None)
+        if ("ask_price_range" in intents or "ask_valuation" in intents
+                or _is_price_question(t)):
+            await play_key(call_uuid, "fresh_price_wa", session)
+            if _step in ("AWAIT_FIRST_REPLY", "BUDGET", "URGENCY", None):
+                session.fresh_step = "VISIT_DATE"
+            return True
+        await play_key(call_uuid, f"fresh_have_{_fresh_prod}", session)
+        # fresh_have_* ends with "aap kab tak lene ka plan kar rahe hain?"
+        # (the urgency question) -- so the next reply is the urgency answer.
+        if _step in ("AWAIT_FIRST_REPLY", None):
+            session.fresh_step = "URGENCY"
+        return True
+
+    # Price question with NO product named this turn but a product named
+    # EARLIER ("recliner sofa" ... then "iska price kya hai") -- carry the
+    # context: WhatsApp price-list deflect, not the generic categories list.
+    if (getattr(session, "lead", {}).get("product_detail")
+            and ("ask_price_range" in intents or "ask_valuation" in intents or _is_price_question(t))
+            and match_price_category(t) is None):
+        await play_key(call_uuid, "fresh_price_wa", session)
+        if getattr(session, "fresh_step", None) in ("AWAIT_FIRST_REPLY", "BUDGET", "URGENCY", None):
+            session.fresh_step = "VISIT_DATE"
+        return True
+
+    # Broad category named as a "what/which do you have" question
+    # ("konse sofa hain", "what beds do you have") -- no specific product, no
+    # menu; the fresh_range_{cat} line names the real variants and asks which.
+    # Below match_fresh_product so a specific item still wins. Skipped when
+    # we're mid budget/urgency AND the turn carries a number -- that's a
+    # budget answer that happens to also ask "which ones", and the step
+    # machine below must still capture the figure (regression-guarded).
+    _fresh_broad = match_fresh_broad_category(t)
+    if _fresh_broad and getattr(session, "fresh_step", None) in ("BUDGET", "URGENCY") \
+            and any(ch.isdigit() for ch in (t or "")):
+        _fresh_broad = None
+    if _fresh_broad:
+        if not session.lead.get("product") and _fresh_broad in ("sofa", "bed", "dining", "wardrobe", "chair"):
+            session.lead["product"] = _fresh_broad
+        await play_key(call_uuid, f"fresh_range_{_fresh_broad}", session)
+        return True
 
     # Soft, no-push exit — "busy right now" / "let me think and get back to you".
     # Distinct from the general objection catch-all below: no reask, no pressure,
@@ -2494,14 +3149,295 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
         await play_key(call_uuid, _key, session)
         return True
 
-    # Location ask — one-shot response covering all 5 real showrooms (Gurugram x2,
-    # Delhi, Noida, Faridabad) without naming any of them individually; full address
-    # + Maps link goes over WhatsApp instead, per this codebase's established
-    # "never speak a full street address on a call" convention. No follow-up city
-    # question, no further date prompt — WhatsApp is where they confirm from here.
+    # 2026-08-23 — location ask, rebuilt around the real 5-store list
+    # (Gurgaon x2, Noida, Faridabad, Delhi). If they named a specific city,
+    # answer with that city's exact store directly (match_store_city);
+    # otherwise play the general list, which itself ends by asking which
+    # city they want (fresh_location_info) -- matches the same
+    # ask-if-unclear pattern the price/category branch below uses.
+    #
+    # `return True` (not False): confirmed live on the Pratham call that
+    # hard-ending the call right after this answer read as an abrupt cutoff
+    # -- he was still actively engaged (three questions in a row right up
+    # to this exact point). Continuing lets the conversation carry on
+    # naturally into whatever's next instead of hanging up on someone
+    # mid-engagement; WhatsApp still fires either way so the address is
+    # there in writing regardless of how the call itself ends.
     if "ask_location" in intents:
-        await play_key(call_uuid, "fresh_location_info", session)
+        _city = match_store_city(t)
+        _key = f"fresh_store_{_city}" if _city else "fresh_location_info"
+        await play_key(call_uuid, _key, session)
         await fire_whatsapp(session, call_uuid)
+        return True
+
+    # 2026-08-23 — category/price ask, built from the real 12-category
+    # catalog. ask_offer_scope included as a synonym trigger here alongside
+    # the dedicated ask_categories intent: confirmed live a real "what
+    # categories do you have" question ("कौन सी कौन सी फर्नीचर कैटेगरीज
+    # हैं?") matched ask_offer_scope's keywords, not a fresh-cta-specific
+    # one (ask_offer_scope's actual meaning -- "which products does the
+    # discount apply to" -- doesn't otherwise exist in fresh_cta, which has
+    # no discount/exchange-offer framing at all, so there's no real
+    # ambiguity in treating it as "what do you sell" here).
+    #
+    # Deliberately does NOT go through the dynamic LLM+TTS fallback at all
+    # for a NAMED category -- this is a common, high-value question with a
+    # small closed answer set, answered instantly from a pre-cached key
+    # instead of depending on the slower, failure-prone dynamic path found
+    # unreliable elsewhere today (TTS timeouts, Groq rate limits, the
+    # Play-interruption bug). A specifically-named item not in the real
+    # catalog honestly says so (fresh_price_unavailable) rather than falling
+    # through to the LLM and risking a fabricated number.
+    #
+    # 2026-08-29 CONFIRMED-LIVE BUG (real test call): a fully vague price
+    # question ("What is our starting price?", no item named at all) was
+    # going to fresh_price_unavailable ("I don't have the exact price for
+    # that, I'll confirm on WhatsApp") -- but the user's own spec for this
+    # exact case ("agar clear nahi to hamare pass ye ye furniture hai,
+    # aapko kiski price chahiye") calls for the categories-clarifying
+    # question instead, which is what fresh_categories_list already says --
+    # the branch just had the wrong key picked for "no category matched".
+    # Now distinguishes "no item named" (-> ask which one) from "a real
+    # non-catalog item was named" (-> honest unavailable) via
+    # mentions_non_catalog_item().
+    if "ask_price_range" in intents or "ask_categories" in intents or "ask_offer_scope" in intents:
+        _category = match_price_category(t)
+        if _category:
+            _key = f"fresh_price_{_category}"
+        elif "ask_price_range" in intents and mentions_non_catalog_item(t):
+            # A specific, real item was named but it's genuinely outside
+            # our 12-category catalog -- honest unavailable line, not a
+            # guess at which of OUR categories they meant instead.
+            _key = "fresh_price_unavailable"
+        else:
+            # No specific item named at all (vague price question), or
+            # ask_categories/ask_offer_scope -- list everything, ends with
+            # its own clarifying question ("aapko kis furniture ki price
+            # janni hai?").
+            _key = "fresh_categories_list"
+        await play_key(call_uuid, _key, session)
+        return True
+
+    # 2026-08-20 — sequential budget/urgency/visit-date step machine (call-1
+    # only: session.fresh_step is None for call_cycle 2/3, so this whole
+    # block is a no-op for them and they fall through unchanged to the
+    # LLM-fallback/generic-reask/close chain below, exactly as before this
+    # change — see the fresh_step init comment above for why retries are
+    # excluded).
+    #
+    # "VISIT_DATE" IS handled here now (added 2026-09-01). Previously it
+    # fell through to the LLM-fallback/generic-reask/close chain, which
+    # meant a date answer the appointment_confirm block above didn't happen
+    # to parse (a phrasing not in its keyword list, an STT script the
+    # matchers don't cover, ...) got no date-specific handling at all --
+    # confirmed live twice: "next Saturday or Sunday" (mis-scripted by STT)
+    # and a mid-step question both dropped straight to "fresh_objection" and
+    # the call ended warm with no appointment, as if the answer was never
+    # given. See the dedicated `session.fresh_step == "VISIT_DATE"` block
+    # further down.
+    if session.fresh_step == "AWAIT_FIRST_REPLY":
+        # Product may already be known from outbound_leads.product_interest
+        # (session.lead["product"] pre-populated at init) — only try to
+        # extract it from what they just said if it isn't.
+        #
+        # 2026-08-22 CONFIRMED-LIVE BUG: mentioning a product name is NOT
+        # mutually exclusive with asking a question about it -- "बेड में
+        # क्या-क्या ऑप्शंस हैं आपके पास?" ("what bed options do you have?")
+        # matched extract_product() -> "bed" successfully, so the old
+        # `elif _try_fresh_llm_qa(...)` (only reachable when extraction
+        # failed) never ran, and a real question got silently treated as
+        # "customer wants a bed" while never being answered. Still capture
+        # the product opportunistically either way (harmless, useful
+        # signal), but check _looks_like_question independently of whether
+        # extraction succeeded, same OR-pattern as the BUDGET/URGENCY/
+        # INTERIOR_BUDGET steps below.
+        if not session.lead.get("product"):
+            from webhook import extract_product
+            _stated_product = normalize_fresh_product_key(t) or extract_product(t)
+            if _stated_product:
+                session.lead["product"] = _stated_product
+        if (not session.lead.get("product") or _looks_like_question(t)) and await _try_fresh_llm_qa(call_uuid, t, session, "fresh_ask_budget"):
+            # Advance to BUDGET even on the detour -- the reprompt just
+            # played WAS fresh_ask_budget, so the next turn's reply is
+            # answering that, not re-stating what they're looking for.
+            # Without this, fresh_step stays AWAIT_FIRST_REPLY and the next
+            # turn redundantly re-runs this same block instead of capturing
+            # their actual budget answer.
+            session.fresh_step = "BUDGET"
+            return True
+        session.fresh_step = "BUDGET"
+        await play_key(call_uuid, "fresh_ask_budget", session)
+        return True
+
+    if session.fresh_step == "BUDGET":
+        from webhook import extract_budget
+        _budget = extract_budget(t)
+        _is_question = _looks_like_question(t)
+        # OR-ing in _looks_like_question(t): a question that happens to
+        # contain a number ("agar mera budget 50 hazar ho toh kya milega")
+        # would otherwise "successfully" extract and get silently accepted
+        # as the answer instead of being answered -- same bug class as
+        # AWAIT_FIRST_REPLY above, found the same way (live verification).
+        if (_budget is None or _is_question) and await _try_fresh_llm_qa(call_uuid, t, session, "fresh_ask_budget"):
+            return True
+        # 2026-08-29 CONFIRMED-LIVE BUG (real test call): _try_fresh_llm_qa
+        # can legitimately return False for a genuine question too -- not
+        # just when it wasn't a question -- whenever the LLM Q&A pipeline
+        # itself fails (Groq/TTS hiccup); it already played
+        # fresh_qa_unavailable acknowledging the question in that case. The
+        # old code fell straight through to `_budget or t` regardless, which
+        # stored the RAW QUESTION TEXT as the customer's budget (confirmed
+        # live: call_summaries.budget_mentioned came back as
+        # 'ओके, कौन-कौन सी कैटेगरीज़ हैं आपके पास?' after this exact path).
+        # Re-ask the real pending question instead of fabricating budget
+        # data and silently advancing past it.
+        if _budget is None and _is_question:
+            await play_key(call_uuid, "fresh_ask_budget", session)
+            return True
+        session.lead["budget"] = _budget or t
+        session.fresh_step = "URGENCY"
+        await play_key(call_uuid, "fresh_ask_urgency", session)
+        return True
+
+    if session.fresh_step == "URGENCY":
+        from webhook import extract_urgency
+        _urgency = extract_urgency(t)
+        _is_question = _looks_like_question(t)
+        if (_urgency is None or _is_question) and await _try_fresh_llm_qa(call_uuid, t, session, "fresh_ask_urgency"):
+            return True
+        # Same fix as BUDGET above -- a genuine question the LLM Q&A
+        # pipeline failed to answer must not get recorded as "urgency" and
+        # silently advance the call past it.
+        if _urgency is None and _is_question:
+            await play_key(call_uuid, "fresh_ask_urgency", session)
+            return True
+        session.lead["urgency"] = _urgency or t
+        session.fresh_step = "VISIT_DATE"
+        await play_key(call_uuid, "fresh_ask_visit_date", session)
+        return True
+
+    if session.fresh_step == "VISIT_DATE":
+        # The bot's immediately-preceding line was "store visit ke liye aap
+        # kab aa sakte hain?" -- so this turn IS the answer to that. The
+        # shared appointment_confirm block ran above already; reaching here
+        # means it didn't recognise the text as a date. Rather than drop to
+        # the generic objection/close chain (which reads as ignoring the
+        # answer -- confirmed live twice), resolve every case explicitly:
+        #
+        #   1. a real question           -> answer it + re-ask the date, ONE
+        #                                   combined Play, stay on VISIT_DATE
+        #   2. explicit deferral / "just -> soft close, no push, WhatsApp
+        #      browsing" / busy
+        #   3. near-empty / pure filler  -> ONE gentle re-ask of the date
+        #   4. anything else with real   -> treat as the visit-date answer
+        #      content                      and CONFIRM (this is the whole
+        #                                    point of the funnel; at this
+        #                                    step a non-question, non-
+        #                                    objection reply is a date)
+        if _looks_like_question(t):
+            # Phrase-heuristic question. _try_fresh_llm_qa answers it, or on
+            # a genuine failure plays fresh_qa_unavailable + the re-ask
+            # itself and returns True. It returns False ONLY on the "LLM
+            # hiccup, nothing played" path (Groq 429 / _REACT_LLM_REPROMPT_
+            # TEXT) -- in that case WE must play a fallback or the turn ends
+            # in dead air after the filler (confirmed live: 26s of silence,
+            # then the customer hung up). A question is never the date
+            # answer, so end the turn here either way, still on VISIT_DATE.
+            if not await _try_fresh_llm_qa(call_uuid, t, session, "fresh_ask_visit_date"):
+                await play_keys(
+                    call_uuid, ["fresh_qa_unavailable", "fresh_ask_visit_date"],
+                    session, log_transcript=[False, False],
+                )
+            return True
+
+        _meaningful_q = set(intents) - {"positive"}
+        if _meaningful_q and _meaningful_q <= _INFORMATIONAL_QA_INTENTS:
+            # Recognised informational question by intent (ask_name/
+            # ask_delivery/...) that the phrase heuristic above missed --
+            # _try_fresh_llm_qa would no-op on it (it self-gates on
+            # _looks_like_question), so acknowledge + re-ask the date as one
+            # sequenced Play and stay on VISIT_DATE. Not a date answer.
+            await play_keys(
+                call_uuid, ["fresh_qa_unavailable", "fresh_ask_visit_date"],
+                session, log_transcript=[False, False],
+            )
+            return True
+
+        # Vague range ("next weekend", "agle hafte") with no concrete day --
+        # acknowledge (details -> WhatsApp) and ask for the exact day once,
+        # then accept whatever comes next. Checked before everything below so
+        # a range never slips into confirm.
+        if _is_vague_date_range(t) and not getattr(session, "visit_day_clarify_asked", False):
+            session.visit_day_clarify_asked = True
+            await play_key(call_uuid, "fresh_ask_visit_day", session)
+            return True
+
+        # Non-committal replies to "when can you come?" -- an explicit
+        # deferral ("kal bataunga"), "busy"/"sochna_hai"/"uncertain" intents,
+        # a "just browsing / I'll think about it" phrase, or "just send it to
+        # me on WhatsApp" (wants info, not a booked slot). NOT a slot -- must
+        # not fake-confirm a hot lead off it (confirmed live: "abhi bas dekh
+        # raha hoon" landed as urgency text; "theek hai aap bhej do" would
+        # land as visit_date). One gentle re-ask, then a soft no-push close.
+        _wants_info_sent = any(
+            p in t.lower().replace("-", " ")
+            for p in ("bhej", "भेज", "send it", "send me", "just send", "whatsapp par bhej")
+        )
+        _noncommittal = (
+            _is_appointment_deferral(t)
+            or bool({"busy", "sochna_hai", "uncertain"} & set(intents))
+            or _is_noncommittal_visit_reply(t)
+            or _wants_info_sent
+        )
+        _real_content = bool(t) and not _is_filler_continuer(t)
+
+        if _noncommittal or not _real_content:
+            if not getattr(session, "visit_date_reask_tried", False):
+                session.visit_date_reask_tried = True
+                await play_key(call_uuid, "fresh_ask_visit_date", session)
+                return True
+            await play_key(call_uuid, "fresh_soft_defer" if _noncommittal else "fresh_no_date_close", session)
+            await fire_whatsapp(session, call_uuid)
+            return False
+
+        _looks_dateish = (
+            "appointment_confirm" in intents
+            or _has_date_context_digit(t)
+            or _has_standalone_day_suffix(t)
+            or bool(set(_tokenize(t)) & _VISIT_COMMITMENT_TOKENS)
+            or bool(set(_tokenize(t.lower().replace("-", " "))) & _SPECIFIC_DAY_TOKENS)
+        )
+
+        # Bare affirmative ("haan", "theek hai ji") with no day named --
+        # agreement, but not a slot. Ask which day once; a positive that
+        # comes AFTER we've already re-asked is taken as good enough.
+        if ("positive" in intents and not _looks_dateish
+                and not getattr(session, "visit_date_reask_tried", False)):
+            session.visit_date_reask_tried = True
+            await play_key(call_uuid, "fresh_ask_visit_date", session)
+            return True
+
+        # Confirm only on a real date/commitment signal, or a "yes" that
+        # survived the re-ask above. Anything else with content but no such
+        # signal (ambiguous chatter after some Q&A) gets one date re-ask,
+        # then a soft close -- never a fabricated appointment.
+        if not (_looks_dateish or "positive" in intents):
+            if not getattr(session, "visit_date_reask_tried", False):
+                session.visit_date_reask_tried = True
+                await play_key(call_uuid, "fresh_ask_visit_date", session)
+                return True
+            await play_key(call_uuid, "fresh_no_date_close", session)
+            await fire_whatsapp(session, call_uuid)
+            return False
+
+        # Real answer to "kab aa sakte hain?" -- confirm the appointment.
+        session.appointment_confirmed = True
+        session.visit_date_raw_text   = t
+        session.lead["visit_date"]    = t
+        session.lead_tier_override    = "hot"
+        session.lead_score_override   = 85
+        await play_key(call_uuid, "fresh_appointment_confirmed", session)
+        await asyncio.sleep(3.0)
         return False
 
     # Added 2026-08-19 -- fresh_cta had ZERO LLM-fallback coverage (the only
@@ -2518,19 +3454,57 @@ async def handle_fresh_cta_turn(session, transcript: str, call_uuid: str) -> boo
     # acknowledgment. Stays in the same single APPOINTMENT state either way
     # (fresh_cta has no sub-states to advance between).
     if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
+        # 2026-08-23 CONFIRMED-LIVE GAP: this is the ORIGINAL LLM-fallback
+        # call site (predates _try_fresh_llm_qa, still the only path once
+        # fresh_step reaches VISIT_DATE or is None for call_cycle 2/3) --
+        # it never got the same 2026-08-22 fixes (bilingual lang threading,
+        # not treating the generic REPROMPT_TEXT as a real answer, the
+        # fresh_qa_unavailable acknowledgment on failure). Confirmed live: a
+        # real caller asked two clearly-recognized questions (ask_offer_scope,
+        # ask_price_range) at this stage and got silently reprompted with no
+        # acknowledgment either time -- same failure mode _try_fresh_llm_qa
+        # was built to close, just unreached from here. Applying the same
+        # three fixes here for consistency.
         _fresh_voice = PREFIX_VOICE_MAP.get("fresh", "simran")
-        llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _fresh_voice, facts=_FRESH_LLM_FACTS)
-        if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=_fresh_voice):
-            await play_key(call_uuid, "fresh_objection", session, log_transcript=False)
+        _lang = "en" if getattr(session, "lang", "hi") == "en" else "hi"
+        llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _fresh_voice, facts=_FRESH_LLM_FACTS, lang=_lang)
+        if llm_answer in (_REACT_LLM_REPROMPT_TEXT, _REACT_LLM_REPROMPT_TEXT_EN):
+            llm_answer = None
+        # 2026-08-23 — combined into one Play request (_play_dynamic_then_key),
+        # same fix and same reason as _try_fresh_llm_qa: two separate Play
+        # requests fired in quick succession let the second cut off the
+        # first before the customer hears it (confirmed live, Pratham call).
+        # Step-aware reprompt key unchanged: re-asks whatever question is
+        # actually pending (budget/urgency) instead of always the generic
+        # "come visit" line; resolves to "fresh_objection" for VISIT_DATE/
+        # None (call_cycle 2/3), same as before this change.
+        if llm_answer and await _play_dynamic_then_key(call_uuid, llm_answer, _fresh_step_question_key(session.fresh_step), session, _fresh_voice, _lang):
             return True
+        # Real question, but no answer could be generated/played in time.
+        # 2026-09-01 -- this used to play "fresh_qa_unavailable" here and
+        # then FALL THROUGH to the catch-all below, which fired a SECOND
+        # separate play_key() for the reask. Combined with the LLM filler
+        # that had already fired, a real caller heard three Play requests in
+        # ~4s, each cutting the previous one mid-word (confirmed live). Send
+        # the acknowledgment + the pending-question reask as ONE sequenced
+        # Vobiz request instead, and end the turn here -- do not also run
+        # the catch-all.
+        session.appt_reask_tried = True
+        await play_keys(
+            call_uuid,
+            ["fresh_qa_unavailable", _fresh_step_question_key(session.fresh_step)],
+            session, log_transcript=[False, False],
+        )
+        return True
 
     # General objection/hesitant/unclear catch-all (stock questions, "WhatsApp
     # options weren't great", expensive, online_cheaper, trust_issue, anything else
     # non-matching): exactly one reask, same appt_reask_tried pattern as the
-    # APPOINTMENT state.
+    # APPOINTMENT state. Step-aware for the same reason as the LLM-fallback
+    # reprompt above.
     if not getattr(session, "appt_reask_tried", False):
         session.appt_reask_tried = True
-        await play_key(call_uuid, "fresh_objection", session)
+        await play_key(call_uuid, _fresh_step_question_key(session.fresh_step), session)
         return True
 
     await play_key(call_uuid, "fresh_no_date_close", session)
@@ -3041,8 +4015,12 @@ async def _handle_reactivation_turn_impl(session, transcript: str, call_uuid: st
         if not intents and not _is_filler_continuer(t):
             _voice = PREFIX_VOICE_MAP.get(p, "shreya")
             _llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, _voice)
-            if _llm_answer and await play_dynamic_text(call_uuid, _llm_answer, session, voice=_voice):
-                await play_key(call_uuid, f"{p}_appointment_ask", session, log_transcript=False)
+            # 2026-08-23 -- combined into one Play request (_play_dynamic_then_key)
+            # instead of two separate calls -- see that helper's docstring:
+            # confirmed live (Pratham, fresh_cta) that a second Play request
+            # fired ~2s after the first cuts it off before the customer
+            # hears it. Same shape here (react_a/b/c's APPOINTMENT state).
+            if _llm_answer and await _play_dynamic_then_key(call_uuid, _llm_answer, f"{p}_appointment_ask", session, _voice, "hi"):
                 return True
         # Unclear response — acknowledge + re-ask once with a different line.
         # log_transcript left at its default (True) as of 2026-08-13 -- this
@@ -3341,8 +4319,9 @@ async def handle_call2_turn(session, transcript: str, call_uuid: str) -> bool:
         if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
             voice = PREFIX_VOICE_MAP.get("c2", "ritu")
             llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, voice)
-            if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=voice):
-                await play_key(call_uuid, "c2_date_direct", session, log_transcript=False)
+            # 2026-08-23 -- combined into one Play request, same fix/reason
+            # as react_a/b/c's APPOINTMENT state above (call2's DATE_ASK).
+            if llm_answer and await _play_dynamic_then_key(call_uuid, llm_answer, "c2_date_direct", session, voice, "hi"):
                 return True
 
         # Vague (including busy/sochna_hai, which fall through to here for
@@ -3539,8 +4518,9 @@ async def handle_call3_turn(session, transcript: str, call_uuid: str) -> bool:
         if _only_unanswered_qa_intents(intents) and not _is_filler_continuer(t):
             voice = PREFIX_VOICE_MAP.get("c3", "simran")
             llm_answer = await _llm_fallback_with_filler(call_uuid, t, session, voice)
-            if llm_answer and await play_dynamic_text(call_uuid, llm_answer, session, voice=voice):
-                await play_key(call_uuid, "c3_decision_date", session, log_transcript=False)
+            # 2026-08-23 -- combined into one Play request, same fix/reason
+            # as react_a/b/c's APPOINTMENT state above (call3's DECISION_DATE).
+            if llm_answer and await _play_dynamic_then_key(call_uuid, llm_answer, "c3_decision_date", session, voice, "hi"):
                 return True
 
         # Vague (including busy/sochna_hai, which fall through to here for

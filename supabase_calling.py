@@ -728,10 +728,6 @@ async def finalize_call(
         # actually happened on these calls instead of reading as [] always.
         intents_fired = intents_fired | getattr(session, "react_intents_seen", set())
         score, tier = _compute_reactivation_score(session)
-        # Appointment confirmed → hard override to HOT regardless of computed score
-        if getattr(session, "lead_score_override", None) is not None:
-            score = session.lead_score_override
-            tier  = getattr(session, "lead_tier_override", tier)
         score_breakdown = {}
     else:
         score, score_breakdown = _compute_score_from_normalized(
@@ -745,6 +741,19 @@ async def finalize_call(
             slots          = slots,
         )
         tier = "hot" if score >= 65 else "warm" if score >= 35 else "cold"
+
+    # Appointment confirmed (or any handler that set an explicit override) →
+    # hard override the computed score/tier. Applies to EVERY campaign now
+    # (2026-09-01): this used to be nested inside the reactivation-only
+    # branch above, so a confirmed fresh_cta appointment was still scored
+    # purely on its (often garbled) budget/urgency slots and could land
+    # "cold" despite a booked visit -- confirmed live, a "Next Saturday or
+    # Sunday" confirm wrote score=34/cold. handle_fresh_cta_turn and the
+    # shared appointment_confirm block both set lead_score_override=85 /
+    # lead_tier_override="hot".
+    if getattr(session, "lead_score_override", None) is not None:
+        score = session.lead_score_override
+        tier  = getattr(session, "lead_tier_override", tier)
     transcript = getattr(session, "conversation", [])
 
     # Detect mid_answered: picked up but did not complete conversation
@@ -1238,7 +1247,24 @@ async def finalize_call(
 
     # ── Fire n8n webhook → triggers WhatsApp follow-up ────────────
     # Only fire if call was actually answered (duration > 0)
-    if duration > 0 and phone_clean and getattr(session, "campaign", "") != "reactivation":
+    #
+    # 2026-08-23 CONFIRMED-LIVE BUG: N8N_WEBHOOK_URL here and N8N_WA_URL used
+    # by fire_whatsapp() (webhook_reactivation.py, called from 40+ sites
+    # across every campaign's script -- every "I'll send you the details on
+    # WhatsApp" line) are the SAME literal n8n endpoint
+    # (.../webhook/voice-call-complete, verified against both env vars) --
+    # this call was firing it a second time, unconditionally, on top of
+    # whatever fire_whatsapp() already sent mid-call, for every answered
+    # non-"reactivation" call. Confirmed live on the Pratham call: two
+    # separate webhook fires for one call. fire_whatsapp() sends the richer
+    # payload (name/offer/campaign, not just phone) and already has its own
+    # session.wa_sent idempotency guard, so it's kept as the primary trigger
+    # -- this post-call site is now a FALLBACK only, skipped whenever a
+    # mid-call send already happened, so exactly one fire happens per call
+    # either way (whichever ran) instead of two.
+    if getattr(session, "wa_sent", False):
+        logger.info(f"[{call_uuid}] n8n webhook skipped — already sent mid-call via fire_whatsapp()")
+    elif duration > 0 and phone_clean and getattr(session, "campaign", "") != "reactivation":
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r_n8n = await client.post(

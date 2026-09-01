@@ -161,10 +161,12 @@ REACT_C_SCRIPT = {
     "rc_filler_4": "Achha ji...", "rc_filler_5": "Samajh gayi ji...", "rc_filler_6": "Theek hai ji...",
 }
 
-# The only 4 product categories fresh_greet_*/fresh_greet_who_* has dedicated
+# The 5 product categories fresh_greet_*/fresh_greet_who_* has dedicated
 # audio for (see FRESH_CTA_SCRIPT below) — anything else falls back to
-# fresh_greet_generic.
-FRESH_CTA_PRODUCT_KEYS = ("bed", "sofa", "wardrobe", "dining")
+# fresh_greet_generic. "chair" added 2026-08-20 (covers "chair"/"office
+# chair"/"gaming chair" etc via substring match below) — previously any
+# chair inquiry silently fell back to the generic greeting.
+FRESH_CTA_PRODUCT_KEYS = ("bed", "sofa", "wardrobe", "dining", "chair")
 
 
 def normalize_fresh_product_key(raw: str | None) -> str | None:
@@ -192,36 +194,552 @@ def normalize_fresh_product_key(raw: str | None) -> str | None:
     return None
 
 
+# 2026-08-23 -- full 12-category price catalog (user-provided, real data,
+# row 5 of their sheet deliberately skipped per their own instruction).
+# Deliberately separate from FRESH_CTA_PRODUCT_KEYS (the narrower 5-category
+# set with dedicated GREETING audio) -- a customer can ask "sofa ki price
+# kya hai" regardless of what their own product_interest was set to, and
+# this covers categories (office table, ottoman, TV unit, ...) the greeting
+# system was never built to open with. First match wins on multi-category
+# text, same convention as normalize_fresh_product_key above.
+_PRICE_CATEGORY_ALIASES = {
+    "sofa":              ["sofa", "sofa set", "सोफा"],
+    "bed":               ["bed", "palang", "बेड", "पलंग"],
+    "wardrobe":          ["wardrobe", "almirah", "अलमारी", "वार्डरोब"],
+    "dining":            ["dining", "dining table", "dining set", "डाइनिंग"],
+    "office_table":      ["office table", "study table", "ऑफिस टेबल", "स्टडी टेबल"],
+    "office_chair":      ["office chair", "ऑफिस चेयर", "ऑफिस कुर्सी"],
+    "lobby_chair":       ["lobby chair", "lounge chair", "लॉबी चेयर", "लाउंज चेयर"],
+    "ottoman":           ["ottoman", "pouffe", "पफ", "ऑटोमन"],
+    "tv_unit":           ["tv unit", "tv table", "टीवी यूनिट", "टीवी टेबल"],
+    "bedroom_chair":     ["bedroom chair", "बेडरूम चेयर"],
+    "garden_furniture":  ["garden furniture", "garden chair", "गार्डन फर्नीचर"],
+    "center_table":      ["center table", "coffee table", "सेंटर टेबल", "कॉफी टेबल"],
+}
+
+
+# Punctuation trimmed off each whitespace-split token before boundary
+# matching below (ASCII terminal punctuation plus Devanagari danda/double
+# danda, both scripts' quotes/dashes). Deliberately NOT a regex \w-based
+# split -- see _tokenize()'s comment in webhook_reactivation.py on why that
+# breaks Devanagari conjuncts; whitespace-splitting then trimming edge
+# punctuation per token is the same safe approach used there.
+_MATCH_PUNCT_CHARS = "?!.,;:'\"()[]{}।॥-–—"
+
+
+def _match_tokens(raw: str) -> list[str]:
+    return [tok.strip(_MATCH_PUNCT_CHARS).lower()
+            for tok in raw.strip().split() if tok.strip(_MATCH_PUNCT_CHARS)]
+
+
+def match_price_category(raw: str | None) -> str | None:
+    """
+    Matches free-text speech to one of the 12 real price-catalog categories
+    above -- returns the category key (used to pick "fresh_price_{key}")
+    or None if nothing matched (caller falls back to fresh_price_unavailable
+    or the general fresh_categories_list, never a fabricated number).
+    "office_chair" checked before generic chair-shaped substrings would be
+    an issue if FRESH_CTA_PRODUCT_KEYS's plain "chair" were reused here --
+    deliberately not reused, this dict's keys are its own category set.
+    """
+    # 2026-08-23 CONFIRMED-LIVE BUG (self-caught while testing): bare
+    # substring matching let "bed" (an alias for the "bed" category) match
+    # INSIDE "bedroom chair ki price" -- "bed" is a literal substring of
+    # "bedroom" -- so a bedroom-chair price question incorrectly resolved
+    # to the bed category instead. Padding with boundary spaces so a match
+    # requires " bed " (whole word), not any occurrence of the substring
+    # "bed" wherever it falls, including inside a longer word.
+    #
+    # 2026-08-29 CONFIRMED-LIVE BUG (real test call): that boundary-space
+    # padding broke on a trailing-punctuation utterance -- "Do you have
+    # starting price of bed?" padded to " do you have starting price of
+    # bed? ", so " bed " (with a trailing SPACE) never matched " bed?" (a
+    # question mark right after, no space) and the caller's named item was
+    # silently dropped to the unavailable fallback. Now tokenizes on
+    # whitespace and strips punctuation off each token first (matching
+    # _tokenize()'s established approach), so "bed?" becomes "bed" before
+    # the boundary check ever runs.
+    if not raw:
+        return None
+    tokens = _match_tokens(raw)
+    if not tokens:
+        return None
+    t = f" {' '.join(tokens)} "
+    for key, aliases in _PRICE_CATEGORY_ALIASES.items():
+        if any(f" {' '.join(alias.split())} " in t for alias in aliases):
+            return key
+    return None
+
+
+# 2026-08-29 -- distinguishes "no item named at all" (e.g. "starting price
+# kya hai") from "a real item was named but it's not in our 12-category
+# catalog" (e.g. "mattress ki price kya hai"). Confirmed live these two need
+# DIFFERENT replies: the first should ask which category they mean
+# (fresh_categories_list), the second should honestly say that item's price
+# isn't available (fresh_price_unavailable) -- match_price_category()
+# returning None can't tell these apart on its own, so this list covers the
+# common non-catalog items a furniture-store caller might plausibly name.
+# Deliberately not exhaustive -- an item not in EITHER list still safely
+# defaults to the categories-clarifying question, never a fabricated price.
+_NON_CATALOG_ITEM_ALIASES = [
+    "mattress", "गद्दा", "gadda", "curtain", "curtains", "parde", "पर्दे",
+    "cushion", "cushions", "takiya", "तकिया", "carpet", "rug", "dari", "दरी",
+    "mirror", "aaina", "आईना", "lamp", "shelf", "bookshelf", "showcase",
+    "crockery unit", "क्रॉकरी यूनिट", "किताबों की अलमारी",
+]
+
+
+def mentions_non_catalog_item(raw: str | None) -> bool:
+    """True if the utterance names a specific furniture-adjacent item that
+    is genuinely outside the 12-category catalog (see comment above) -- used
+    to pick the honest "not available" reply instead of the "which category
+    do you mean" clarifying question for a fully vague price ask."""
+    if not raw:
+        return False
+    t = f" {' '.join(_match_tokens(raw))} "
+    return any(f" {' '.join(alias.split())} " in t for alias in _NON_CATALOG_ITEM_ALIASES)
+
+
+# 2026-08-23 -- the 5 real store locations (user-provided, verified against
+# an actual WhatsApp confirmation thread: Gurgaon x2, Noida, Faridabad,
+# Delhi). "gurgaon"/"gurugram" both map to the same city key since both
+# spellings are in common use for this exact place.
+_STORE_CITY_ALIASES = {
+    "gurgaon":    ["gurgaon", "gurugram", "गुड़गांव", "गुरुग्राम", "गुडगाँव"],
+    "noida":      ["noida", "नोएडा"],
+    "faridabad":  ["faridabad", "फरीदाबाद"],
+    "delhi":      ["delhi", "ghitorni", "दिल्ली", "घिटोरनी"],
+}
+
+
+def match_store_city(raw: str | None) -> str | None:
+    """Matches free-text speech to one of the 4 cities with a store (Gurgaon
+    has 2 stores, both covered by fresh_store_gurgaon) -- returns the city
+    key (used to pick "fresh_store_{key}") or None if no city was named
+    (caller falls back to fresh_location_info's full list + clarifying
+    question)."""
+    # Kept as a bare (non-boundary-padded) substring check deliberately --
+    # every alias here is a proper-noun city name long/distinctive enough
+    # that accidental substring collisions aren't a realistic risk the way
+    # short common words like "bed" are for match_price_category above.
+    # Still routed through _match_tokens() (2026-08-29) so trailing
+    # punctuation ("Delhi?", "Noida.") can't silently break a match either --
+    # same bug class confirmed live on match_price_category the same day.
+    if not raw:
+        return None
+    t = f" {' '.join(_match_tokens(raw))} "
+    for key, aliases in _STORE_CITY_ALIASES.items():
+        if any(alias in t for alias in aliases):
+            return key
+    return None
+
+
+# ── Specific-product recognition (2026-09-01) ─────────────────────────────────
+# Krishna Furniture doesn't sell by a short "category menu" -- customers ask
+# for a specific item ("L-shape sofa", "recliner", "6 seater dining"). This
+# maps a spoken phrase to a canonical product key; handle_fresh_cta_turn then
+# plays the pre-generated fresh_have_{key} availability line (or, for a price
+# question, fresh_price_wa -- price list + photos go to WhatsApp, per explicit
+# instruction). Product list built from krishnafurniture.com's live catalog.
+#
+# Every alias is a MULTI-WORD specific phrase on purpose -- a bare "sofa" /
+# "bed" must NOT match here (those stay on the normal budget/urgency funnel
+# via normalize_fresh_product_key). First key whose alias is found wins;
+# ordering below puts the more specific variants first within each group.
+_FRESH_PRODUCT_ALIASES = {
+    # ---- sofas & seating ----
+    "l_shape_sofa":       ["l shape sofa", "l shaped sofa", "l type sofa", "l shape couch",
+                            "corner sofa", "एल शेप सोफा", "एल शेप्ड सोफा", "एल टाइप सोफा",
+                            "एल शेप का सोफा", "कॉर्नर सोफा"],
+    "u_shape_sofa":       ["u shape sofa", "u shaped sofa", "u type sofa", "यू शेप सोफा",
+                            "यू शेप्ड सोफा", "यू शेप का सोफा"],
+    "sectional_sofa":     ["sectional sofa", "सेक्शनल सोफा"],
+    "recliner_sofa":      ["recliner sofa", "reclining sofa", "recliner chair", "recliner",
+                            "रिक्लाइनर", "रीक्लाइनर", "रिक्लाइनर सोफा", "आराम कुर्सी वाला सोफा"],
+    "sofa_cum_bed":       ["sofa cum bed", "sofa bed", "sofa-bed", "सोफा कम बेड", "सोफ़ा कम बेड",
+                            "सोफा बेड"],
+    "diwan":              ["diwan cum bed", "diwan", "deewan", "दीवान", "दिवान", "दीवान कम बेड"],
+    "leather_sofa":       ["leather sofa", "leatherette sofa", "leather couch", "लेदर सोफा",
+                            "लैदर सोफा", "चमड़े का सोफा"],
+    "fabric_sofa":        ["fabric sofa", "cloth sofa", "फैब्रिक सोफा", "कपड़े का सोफा"],
+    "wooden_sofa":        ["wooden sofa", "wood sofa", "वुडन सोफा", "लकड़ी का सोफा"],
+    "chester_sofa":       ["chester sofa", "chesterfield sofa", "chesterfield", "चेस्टर सोफा"],
+    "sofa_set":           ["sofa set", "3 plus 2 sofa", "3+2 sofa", "3 2 sofa set", "सोफा सेट",
+                            "सोफे का सेट"],
+    "two_seater_sofa":    ["2 seater sofa", "two seater sofa", "do seater sofa", "2 seater couch",
+                            "दो सीटर सोफा", "2 सीटर सोफा", "टू सीटर सोफा"],
+    "three_seater_sofa":  ["3 seater sofa", "three seater sofa", "teen seater sofa",
+                            "तीन सीटर सोफा", "3 सीटर सोफा", "थ्री सीटर सोफा"],
+    "lobby_chair":        ["lobby chair", "लॉबी चेयर", "लॉबी कुर्सी"],
+    "lounge_chair":       ["lounge chair", "accent chair", "लाउंज चेयर"],
+    "rocking_chair":      ["rocking chair", "रॉकिंग चेयर", "झूला कुर्सी"],
+    "ottoman":            ["ottoman", "pouffe", "puffi", "pouf", "ऑटोमन", "पफ", "पफी", "मूढ़ा"],
+    # ---- beds & bedroom ----
+    "king_bed":           ["king size bed", "king bed", "queen size bed", "queen bed",
+                            "master bed", "master bedroom bed", "master size bed",
+                            "किंग साइज बेड", "किंग साइज़ बेड", "किंग बेड", "क्वीन साइज बेड",
+                            "क्वीन बेड", "मास्टर बेड", "मास्टर बैडरूम बेड"],
+    "storage_bed":        ["storage bed", "hydraulic bed", "hydraulic storage bed", "box bed",
+                            "स्टोरेज बेड", "हाइड्रोलिक बेड", "हाइड्रॉलिक बेड", "बॉक्स बेड",
+                            "डिब्बे वाला बेड"],
+    "wooden_bed":         ["wooden bed", "solid wood bed", "sheesham bed", "sheesham wood bed",
+                            "वुडन बेड", "लकड़ी का बेड", "शीशम का बेड", "शीशम बेड",
+                            "सॉलिड वुड बेड"],
+    "double_bed":         ["double bed", "डबल बेड"],
+    "single_bed":         ["single bed", "सिंगल बेड"],
+    "two_door_wardrobe":  ["2 door wardrobe", "two door wardrobe", "2 door almirah",
+                            "दो दरवाजे की अलमारी", "2 डोर वार्डरोब", "टू डोर वार्डरोब"],
+    "three_door_wardrobe":["3 door wardrobe", "three door wardrobe", "3 door almirah",
+                            "तीन दरवाजे की अलमारी", "3 डोर वार्डरोब", "थ्री डोर वार्डरोब"],
+    "sliding_wardrobe":   ["sliding wardrobe", "sliding almirah", "sliding door wardrobe",
+                            "स्लाइडिंग वार्डरोब", "स्लाइडिंग अलमारी"],
+    "modular_wardrobe":   ["modular wardrobe", "मॉड्यूलर वार्डरोब"],
+    "dressing_table":     ["dressing table", "dresser", "ड्रेसिंग टेबल", "श्रृंगार मेज"],
+    "chest_of_drawers":   ["chest of drawers", "drawer unit", "chester drawer",
+                            "चेस्ट ऑफ ड्रॉअर्स", "ड्रॉअर यूनिट", "दराज वाली अलमारी"],
+    # ---- dining ----
+    "four_seater_dining": ["4 seater dining", "four seater dining", "4 seater dining set",
+                            "4 seater dining table", "चार सीटर डाइनिंग", "4 सीटर डाइनिंग"],
+    "six_seater_dining":  ["6 seater dining", "six seater dining", "6 seater dining set",
+                            "6 seater dining table", "छह सीटर डाइनिंग", "6 सीटर डाइनिंग"],
+    "eight_seater_dining":["8 seater dining", "eight seater dining", "8 seater dining set",
+                            "आठ सीटर डाइनिंग", "8 सीटर डाइनिंग"],
+    "glass_dining":       ["glass dining", "glass dining table", "glass top dining",
+                            "ग्लास डाइनिंग", "कांच की डाइनिंग टेबल"],
+    "marble_dining":      ["marble dining", "marble dining table", "marble top dining",
+                            "मार्बल डाइनिंग", "संगमरमर की डाइनिंग टेबल"],
+    "dining_chair":       ["dining chair", "डाइनिंग चेयर", "डाइनिंग कुर्सी"],
+    "crockery_unit":      ["crockery unit", "crockery cabinet", "क्रॉकरी यूनिट", "क्रॉकरी कैबिनेट"],
+    "sideboard":          ["sideboard", "buffet cabinet", "साइडबोर्ड"],
+    # ---- tables & storage ----
+    "coffee_table":       ["coffee table", "कॉफी टेबल", "कॉफ़ी टेबल"],
+    "center_table":       ["center table", "centre table", "सेंटर टेबल"],
+    "side_table":         ["side table", "end table", "bedside table", "साइड टेबल",
+                            "बेडसाइड टेबल", "एंड टेबल"],
+    "nesting_table":      ["nesting table", "nesting tables", "नेस्टिंग टेबल"],
+    "tv_unit":            ["tv unit", "tv cabinet", "media unit", "tv panel",
+                            "टीवी यूनिट", "टीवी कैबिनेट", "टीवी पैनल"],
+    "shoe_rack":          ["shoe rack", "जूता रैक", "शू रैक", "जूतों का रैक"],
+    "bookshelf":          ["bookshelf", "book shelf", "bookcase", "book case",
+                            "बुकशेल्फ", "किताबों की अलमारी"],
+    # ---- office & study ----
+    "office_table":       ["office table", "office desk", "ऑफिस टेबल", "ऑफिस डेस्क"],
+    "study_table":        ["study table", "study desk", "स्टडी टेबल", "पढ़ाई की मेज"],
+    "office_chair":       ["office chair", "revolving chair", "ऑफिस चेयर", "रिवॉल्विंग चेयर",
+                            "घूमने वाली कुर्सी"],
+    "reception_table":    ["reception table", "reception desk", "रिसेप्शन टेबल"],
+    # ---- outdoor & decor ----
+    "garden_furniture":   ["garden furniture", "garden chair", "garden set", "गार्डन फर्नीचर",
+                            "बगीचे का फर्नीचर"],
+    "outdoor_furniture":  ["outdoor furniture", "balcony furniture", "patio furniture",
+                            "आउटडोर फर्नीचर", "बालकनी का फर्नीचर"],
+    "temple":             ["pooja unit", "pooja mandir", "wooden temple", "mandir",
+                            "मंदिर", "पूजा यूनिट", "पूजा मंदिर", "लकड़ी का मंदिर"],
+}
+
+# Canonical key -> the natural spoken name to drop into the fresh_have_{key}
+# and (English) sentence templates. Hindi names use the common Hinglish form
+# customers themselves use.
+_FRESH_PRODUCT_DISPLAY = {
+    "l_shape_sofa":       {"hi": "L shape sofa",          "en": "L-shape sofa"},
+    "u_shape_sofa":       {"hi": "U shape sofa",          "en": "U-shape sofa"},
+    "sectional_sofa":     {"hi": "sectional sofa",        "en": "sectional sofa"},
+    "recliner_sofa":      {"hi": "recliner sofa",         "en": "recliner sofa"},
+    "sofa_cum_bed":       {"hi": "sofa cum bed",          "en": "sofa cum bed"},
+    "diwan":              {"hi": "diwan",                 "en": "diwan"},
+    "leather_sofa":       {"hi": "leather sofa",          "en": "leather sofa"},
+    "fabric_sofa":        {"hi": "fabric sofa",           "en": "fabric sofa"},
+    "wooden_sofa":        {"hi": "wooden sofa",           "en": "wooden sofa"},
+    "chester_sofa":       {"hi": "chester sofa",          "en": "Chester sofa"},
+    "sofa_set":           {"hi": "sofa set",              "en": "sofa set"},
+    "two_seater_sofa":    {"hi": "two seater sofa",       "en": "two-seater sofa"},
+    "three_seater_sofa":  {"hi": "three seater sofa",     "en": "three-seater sofa"},
+    "lobby_chair":        {"hi": "lobby chair",           "en": "lobby chair"},
+    "lounge_chair":       {"hi": "lounge chair",          "en": "lounge chair"},
+    "rocking_chair":      {"hi": "rocking chair",         "en": "rocking chair"},
+    "ottoman":            {"hi": "ottoman",               "en": "ottoman"},
+    "king_bed":           {"hi": "king size bed",         "en": "king size bed"},
+    "storage_bed":        {"hi": "hydraulic storage bed", "en": "hydraulic storage bed"},
+    "wooden_bed":         {"hi": "solid wood bed",        "en": "solid wood bed"},
+    "double_bed":         {"hi": "double bed",            "en": "double bed"},
+    "single_bed":         {"hi": "single bed",            "en": "single bed"},
+    "two_door_wardrobe":  {"hi": "two door wardrobe",     "en": "two-door wardrobe"},
+    "three_door_wardrobe":{"hi": "three door wardrobe",   "en": "three-door wardrobe"},
+    "sliding_wardrobe":   {"hi": "sliding wardrobe",      "en": "sliding wardrobe"},
+    "modular_wardrobe":   {"hi": "modular wardrobe",      "en": "modular wardrobe"},
+    "dressing_table":     {"hi": "dressing table",        "en": "dressing table"},
+    "chest_of_drawers":   {"hi": "chest of drawers",      "en": "chest of drawers"},
+    "four_seater_dining": {"hi": "4 seater dining set",   "en": "4-seater dining set"},
+    "six_seater_dining":  {"hi": "6 seater dining set",   "en": "6-seater dining set"},
+    "eight_seater_dining":{"hi": "8 seater dining set",   "en": "8-seater dining set"},
+    "glass_dining":       {"hi": "glass dining table",    "en": "glass dining table"},
+    "marble_dining":      {"hi": "marble dining table",   "en": "marble dining table"},
+    "dining_chair":       {"hi": "dining chair",          "en": "dining chair"},
+    "crockery_unit":      {"hi": "crockery unit",         "en": "crockery unit"},
+    "sideboard":          {"hi": "sideboard",             "en": "sideboard"},
+    "coffee_table":       {"hi": "coffee table",          "en": "coffee table"},
+    "center_table":       {"hi": "center table",          "en": "center table"},
+    "side_table":         {"hi": "side table",            "en": "side table"},
+    "nesting_table":      {"hi": "nesting table",         "en": "nesting table"},
+    "tv_unit":            {"hi": "TV unit",               "en": "TV unit"},
+    "shoe_rack":          {"hi": "shoe rack",             "en": "shoe rack"},
+    "bookshelf":          {"hi": "bookshelf",             "en": "bookshelf"},
+    "office_table":       {"hi": "office table",          "en": "office table"},
+    "study_table":        {"hi": "study table",           "en": "study table"},
+    "office_chair":       {"hi": "office chair",          "en": "office chair"},
+    "reception_table":    {"hi": "reception table",       "en": "reception table"},
+    "garden_furniture":   {"hi": "garden furniture",      "en": "garden furniture"},
+    "outdoor_furniture":  {"hi": "outdoor furniture",     "en": "outdoor furniture"},
+    "temple":             {"hi": "wooden temple",         "en": "wooden temple"},
+}
+
+# Specific product key -> the broad funnel category (feeds session.lead
+# ["product"] so the rest of the funnel / call_summaries stay consistent).
+_FRESH_PRODUCT_BROAD = {
+    "l_shape_sofa": "sofa", "u_shape_sofa": "sofa", "sectional_sofa": "sofa",
+    "recliner_sofa": "sofa", "sofa_cum_bed": "sofa", "diwan": "sofa",
+    "leather_sofa": "sofa", "fabric_sofa": "sofa", "wooden_sofa": "sofa",
+    "chester_sofa": "sofa", "sofa_set": "sofa", "two_seater_sofa": "sofa",
+    "three_seater_sofa": "sofa", "lobby_chair": "chair", "lounge_chair": "chair",
+    "rocking_chair": "chair", "ottoman": "chair",
+    "king_bed": "bed", "storage_bed": "bed", "wooden_bed": "bed",
+    "double_bed": "bed", "single_bed": "bed",
+    "two_door_wardrobe": "wardrobe", "three_door_wardrobe": "wardrobe",
+    "sliding_wardrobe": "wardrobe", "modular_wardrobe": "wardrobe",
+    "dressing_table": "wardrobe", "chest_of_drawers": "wardrobe",
+    "four_seater_dining": "dining", "six_seater_dining": "dining",
+    "eight_seater_dining": "dining", "glass_dining": "dining",
+    "marble_dining": "dining", "dining_chair": "dining",
+    "crockery_unit": "dining", "sideboard": "dining",
+    "coffee_table": "sofa", "center_table": "sofa", "side_table": "sofa",
+    "nesting_table": "sofa", "tv_unit": "sofa", "shoe_rack": "wardrobe",
+    "bookshelf": "wardrobe", "office_table": "office_table",
+    "study_table": "office_table", "office_chair": "office_chair",
+    "reception_table": "office_table", "garden_furniture": "garden_furniture",
+    "outdoor_furniture": "garden_furniture", "temple": "wardrobe",
+}
+
+_PRICE_ASK_WORDS = {
+    "price", "prices", "rate", "cost", "प्राइस", "प्राइज़", "रेट", "रेट्स",
+    "कीमत", "कीमतें", "दाम", "दाम", "kimat", "keemat", "daam", "kitne", "kitna",
+    "कितने", "कितना", "कितनी", "budget", "बजट", "charges", "चार्ज",
+}
+
+
+def _is_price_question(raw: str | None, intents=None) -> bool:
+    if intents and ("ask_price_range" in intents or "ask_valuation" in intents):
+        return True
+    if not raw:
+        return False
+    return bool(set(_match_tokens(raw)) & _PRICE_ASK_WORDS)
+
+
+def match_fresh_product(raw: str | None) -> str | None:
+    """Free-text speech -> canonical specific-product key (see
+    _FRESH_PRODUCT_ALIASES) or None. Boundary-padded token match, same safe
+    approach as match_price_category()."""
+    if not raw:
+        return None
+    tokens = _match_tokens(raw)
+    if not tokens:
+        return None
+    t = f" {' '.join(tokens)} "
+    for key, aliases in _FRESH_PRODUCT_ALIASES.items():
+        if any(f" {' '.join(alias.split())} " in t for alias in aliases):
+            return key
+    return None
+
+
+# Broad-category "what/which do you have" question -> one of these range
+# lines (fresh_range_{key}), for when the customer names a category but no
+# specific product ("konse sofa hain", "what beds do you have"). Krishna
+# Furniture has no short menu, so each line names the real variants in that
+# category and asks which one -- keeps the conversation moving instead of a
+# dead menu. 2026-09-01.
+_FRESH_BROAD_ALIASES = {
+    "sofa":     ["sofa", "couch", "सोफा", "सोफे", "सोफ़ा", "काउच"],
+    "bed":      ["bed", "beds", "palang", "बेड", "बेड्स", "पलंग", "बिस्तर"],
+    "dining":   ["dining", "dining table", "dining set", "डाइनिंग", "खाने की मेज"],
+    "wardrobe": ["wardrobe", "almirah", "almari", "cupboard", "अलमारी", "अलमीरा", "वार्डरोब", "कपबोर्ड"],
+    "office":   ["office", "study", "office furniture", "ऑफिस", "स्टडी", "दफ्तर"],
+    "chair":    ["chair", "chairs", "kursi", "कुर्सी", "कुर्सियां", "चेयर"],
+}
+# Deliberately tight -- only unambiguous "which one / what kinds" markers.
+# Bare "what"/"which"/"kitne"/"type" are far too common (they appear in
+# budget/urgency/delivery answers) and caused false matches.
+_FRESH_LIST_QUESTION_WORDS = {
+    "kaun", "kaunse", "kaunsa", "kaunsi", "konse", "konsa", "konsi",
+    "कौन", "कौनसे", "कौनसा", "कौनसी", "कौनसी",
+}
+_FRESH_LIST_QUESTION_PHRASES = (
+    "kya kya", "क्या क्या", "kaun kaun", "कौन कौन", "kaun sa", "kaun se",
+    "कौन सा", "कौन से", "kis type", "kis kism", "किस टाइप", "किस किस्म",
+    "kitne type", "kitni tarah", "what kind", "what type", "which type",
+    "what all", "which all", "kaunse options", "kya options",
+)
+
+
+def match_fresh_broad_category(raw: str | None) -> str | None:
+    """Speech naming a broad furniture category AS A "what do you have"
+    question -> the category key (fresh_range_{key}); None otherwise. Both a
+    category word AND an unambiguous list/which-one marker must be present,
+    so a plain "sofa chahiye" or "6 mahine mein chahiye" does NOT match."""
+    if not raw:
+        return None
+    tokens = _match_tokens(raw)
+    if not tokens:
+        return None
+    joined = " " + " ".join(tokens) + " "
+    _marker = (
+        set(tokens) & _FRESH_LIST_QUESTION_WORDS
+        or any(p in joined for p in _FRESH_LIST_QUESTION_PHRASES)
+        or (("what" in tokens or "which" in tokens)
+            and any(p in joined for p in (
+                "do you have", "you have", "u have", "available", "options",
+                "you got", "you sell", "you carry",
+            )))
+    )
+    if not _marker:
+        return None
+    for key, aliases in _FRESH_BROAD_ALIASES.items():
+        if any(f" {' '.join(a.split())} " in joined for a in aliases):
+            return key
+    return None
+
+
 FRESH_CTA_SCRIPT = {
-    # 2026-08-15 warm rewrite (Agent_Replies_Warm.md, user-approved verbatim).
-    # All lines voiced as Simran. No dnc key here on purpose — hard decline
-    # reuses ra_dnc's existing cached audio directly (see handle_fresh_cta_turn).
-    "fresh_greet_bed": "Namaste ji! WhatsApp par hamari baat hui thi — aap bed dekhna chahte the. Toh store par kab aa rahe hain? Main khud aapko wahi milungi.",
-    "fresh_greet_sofa": "Namaste ji! WhatsApp par hamari baat hui thi — aap sofa dekhna chahte the. Toh store par kab aa rahe hain? Main khud aapko wahi milungi.",
-    "fresh_greet_wardrobe": "Namaste ji! WhatsApp par hamari baat hui thi — aap wardrobe dekhna chahte the. Toh store par kab aa rahe hain? Main khud aapko wahi milungi.",
-    "fresh_greet_dining": "Namaste ji! WhatsApp par hamari baat hui thi — aap dining set dekhna chahte the. Toh store par kab aa rahe hain? Main khud aapko wahi milungi.",
-    "fresh_greet_generic": "Namaste ji! WhatsApp par Krishna Furniture ke baare mein hamari baat hui thi. Store par kab aa sakte hain? Main aapko wahi milungi.",
+    # 2026-08-20 rewrite -- simplified opener per explicit request: the old
+    # greeting asked "when can you come to the store" immediately, before
+    # anything else was established. New greeting just opens the floor
+    # ("what are you looking for, how can I help") -- budget/urgency/visit-
+    # date are now asked as their own separate sequential questions later in
+    # the call (see fresh_ask_budget/fresh_ask_urgency/fresh_ask_visit_date
+    # below and handle_fresh_cta_turn's fresh_step machine). All lines voiced
+    # as Simran. No dnc key here on purpose — hard decline reuses ra_dnc's
+    # existing cached audio directly (see handle_fresh_cta_turn).
+    "fresh_greet_bed": "Namaste ji! WhatsApp par hamari baat ho rahi thi — aap bed ke baare mein pooch rahe the. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_sofa": "Namaste ji! WhatsApp par hamari baat ho rahi thi — aap sofa ke baare mein pooch rahe the. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_wardrobe": "Namaste ji! WhatsApp par hamari baat ho rahi thi — aap wardrobe ke baare mein pooch rahe the. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_dining": "Namaste ji! WhatsApp par hamari baat ho rahi thi — aap dining set ke baare mein pooch rahe the. Main aapki kaise madad kar sakti hoon?",
+    # New product category, 2026-08-20 -- see FRESH_CTA_PRODUCT_KEYS.
+    "fresh_greet_chair": "Namaste ji! WhatsApp par hamari baat ho rahi thi — aap chair ke baare mein pooch rahe the. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_generic": "Namaste ji! WhatsApp par Krishna Furniture ko lekar hamari baat ho rahi thi. Aap kya furniture dekh rahe hain? Main aapki kaise madad kar sakti hoon?",
     "fresh_objection": "Ji, bahut hi sundar naye designs aaye hain — aapko zaroor pasand aayenge. Main WhatsApp par bhej deti hoon, par ek baar store aa kar dekhenge toh farak khud dikhega. Kab aa sakte hain?",
     "fresh_appointment_confirmed": "Bahut badhiya ji! Main aapka appointment confirm kar deti hoon — hamari team aapka intezaar karegi. Jaldi milte hain!",
     "fresh_no_date_close": "Koi baat nahi ji. Main WhatsApp par kuch sundar options bhej deti hoon — aaram se dekh lijiye, phir jab convenient ho visit plan kar lenge.",
     "fresh_soft_defer": "Theek hai ji, aap WhatsApp par hi confirm kar dijiyega — main aur options bhej deti hoon.",
-    # Store list standardized to the 3-showroom version (Sector 14 Gurgaon,
-    # Delhi, Noida) that react_a/b/c already use, per the doc's own
-    # [VERIFY STORES] flag -- Fresh CTA's old 4-store "Gurugram/Faridabad"
-    # version was the stale outlier.
-    "fresh_location_info": "Hamare showroom Sector 14 Gurgaon, Delhi aur Noida mein hain ji. WhatsApp par main aapko exact address aur Google Maps link bhej deti hoon — wahi se date confirm kar dijiyega, phir wahi milenge.",
-    "fresh_greet_who_bed": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi bed ke baare mein. Store par kab aana hoga?",
-    "fresh_greet_who_sofa": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi sofa ke baare mein. Store par kab aana hoga?",
-    "fresh_greet_who_wardrobe": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi wardrobe ke baare mein. Store par kab aana hoga?",
-    "fresh_greet_who_dining": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi dining set ke baare mein. Store par kab aana hoga?",
-    "fresh_greet_who_generic": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi. Store par kab aana hoga?",
+    # 2026-08-23 -- replaced with the real 5-store list (user-provided,
+    # verified against an actual WhatsApp confirmation thread: Gurgaon x2,
+    # Noida, Faridabad, Delhi) -- the old 3-city version (Sector 14 Gurgaon/
+    # Delhi/Noida) was itself already a stale placeholder per its own
+    # comment. Now ends with a clarifying question instead of assuming
+    # which city they want -- see fresh_store_{city} below for the specific
+    # follow-ups this leads into.
+    "fresh_location_info": "Hamare total paanch stores hain ji — Gurgaon mein do, aur ek-ek Noida, Faridabad, aur Delhi mein. Aapko kaunsi city ki location chahiye?",
+    "fresh_store_gurgaon": "Gurgaon mein hamare do stores hain — ek Atul Kataria Chowk, Sector 14, Old Delhi Road par, aur doosra Sector 69, Sohna Road, Vatika Chowk ke paas. Main exact address aur Maps link WhatsApp par bhej deti hoon.",
+    "fresh_store_noida": "Noida mein hamara store A-2, Sector 10 mein hai. Main exact address WhatsApp par bhej deti hoon.",
+    "fresh_store_faridabad": "Faridabad mein hamara store Sector 28 Metro Station ke bilkul saamne hai. Main exact address WhatsApp par bhej deti hoon.",
+    "fresh_store_delhi": "Delhi mein hamara store Ghitorni mein hai. Main exact address WhatsApp par bhej deti hoon.",
+    # 2026-08-23 — category/price Q&A, built from the real catalog (user-
+    # provided). Categories list ends with a clarifying question rather
+    # than guessing which one they want the price for -- same pattern as
+    # fresh_location_info above. Each per-category reply is its own
+    # pre-cached key (not dynamic LLM+TTS) so this common, high-value
+    # question type never depends on the slower/less reliable dynamic
+    # fallback path found unreliable elsewhere this same day.
+    "fresh_categories_list": "Ji, hamare paas sofa, bed, wardrobe, dining set, office table, office chair, lobby chair, ottoman, TV unit, bedroom chair, garden furniture, aur center table — sab available hai. Aapko kis furniture ki price janni hai?",
+    "fresh_price_sofa": "Sofa 3 plus 2 seater mein ₹45,000 se shuru hota hai, aur 7 seater ₹65,000 se shuru hota hai.",
+    "fresh_price_bed": "Bed ₹24,000 se shuru hota hai, aur season wood wala bed ₹50,000 se shuru hota hai.",
+    "fresh_price_wardrobe": "Wardrobe ₹24,000 se shuru hota hai.",
+    "fresh_price_dining": "4 seater dining set bina stone ke ₹35,000 se shuru hota hai, aur stone ke saath ₹55,000 se shuru hota hai.",
+    "fresh_price_office_table": "Office table ₹10,000 se shuru hota hai.",
+    "fresh_price_office_chair": "Office chair ₹4,500 se shuru hoti hai.",
+    "fresh_price_lobby_chair": "Lobby ya lounge chair ₹22,000 se shuru hoti hai.",
+    "fresh_price_ottoman": "Ottoman ya pouffe ₹4,000 se shuru hota hai.",
+    "fresh_price_tv_unit": "TV unit ₹25,000 se shuru hota hai.",
+    "fresh_price_bedroom_chair": "Bedroom chair ₹22,000 se shuru hoti hai.",
+    "fresh_price_garden_furniture": "Garden furniture ₹25,000 se shuru hota hai.",
+    "fresh_price_center_table": "Center ya coffee table ₹20,000 se shuru hota hai.",
+    # Deliberate honest fallback, per explicit instruction 2026-08-23 -- for
+    # anything asked that isn't in the real catalog above (an item we don't
+    # carry, or a detail genuinely not on hand), never fabricate a number.
+    "fresh_price_unavailable": "Iska exact price abhi mere paas available nahi hai — main WhatsApp par confirm karke turant bata deti hoon.",
+    # 2026-08-20 rewrite -- dropped the hardcoded "store par kab aana hoga"
+    # ending: confusion_who can fire at ANY point in the new sequential
+    # flow (not just as an opener), and the old ending pre-empted whichever
+    # question fresh_step actually has pending next. Simplified to match the
+    # new greeting's open-floor tone; the call just continues from wherever
+    # fresh_step is on the customer's next reply, same as before this change.
+    "fresh_greet_who_bed": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi bed ke baare mein. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_who_sofa": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi sofa ke baare mein. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_who_wardrobe": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi wardrobe ke baare mein. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_who_dining": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi dining set ke baare mein. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_who_chair": "Ji, Krishna Furniture se — hamari WhatsApp par baat hui thi chair ke baare mein. Main aapki kaise madad kar sakti hoon?",
+    "fresh_greet_who_generic": "Ji, Krishna Furniture se — hamari WhatsApp par baat ho rahi thi. Aap kya furniture dekh rahe hain, main aapki kaise madad kar sakti hoon?",
     # Phase 2 — price/trust objection handling for fresh_cta's single
     # APPOINTMENT state, wired via route_objection() (webhook_reactivation.py).
     # Single key each (no voice fan-out needed) since this funnel is always
     # Simran, unlike obj_repeat_generic which crosses flows/voices.
     "fresh_price": "Ji, price bilkul reasonable hai — poori detail WhatsApp par bhej deti hoon. Store aa kar dekhenge toh value khud samajh aayegi. Kab aa sakte hain?",
     "fresh_trust": "Bilkul samajhti hoon ji. Store aa kar khud dekh lijiye — koi obligation nahi, wahi se sahi decide kar paayenge. Kab aa sakte hain?",
+    # 2026-08-20 — new sequential budget/urgency/visit-date flow (call-1
+    # only, see handle_fresh_cta_turn's fresh_step machine). Asked in this
+    # fixed order after the customer's first reply to the greeting
+    # establishes (or confirms) what they're looking for.
+    "fresh_ask_budget": "Achha ji, bataiye — is ke liye aapka budget roughly kitna hai?",
+    "fresh_ask_urgency": "Theek hai ji, samajh gayi. Aur ye aapko kab tak chahiye — jaldi mein hain ya abhi bas dekh rahe hain?",
+    "fresh_ask_visit_date": "Bilkul samajh gayi ji. Toh store visit ke liye aap kab aa sakte hain? Main khud aapko wahi milungi.",
+    # 2026-09-01 -- clarify step for a VAGUE date range ("next weekend",
+    # "agle hafte", "kuch din mein"). Instead of confirming an appointment
+    # against a range, acknowledge (details go on WhatsApp) and pin down the
+    # exact day; the customer's next reply is what actually gets confirmed.
+    # See handle_fresh_cta_turn's _is_vague_date_range wiring.
+    "fresh_ask_visit_day": "Bilkul ji! Saari details aur store ka address main abhi aapko WhatsApp par bhej deti hoon. Bas ek baat — aap exactly kaunse din aa paayenge? Main us din khud aapko wahaan milungi.",
+    # 2026-08-20 — interior-design branch: a distinct exit from the normal
+    # furniture flow. One budget question, then a manager handoff -- no
+    # urgency/visit-date asks, per spec.
+    "fresh_interior_budget_ask": "Ji bilkul, hum interior design consultation bhi karte hain! Iske liye aapka approximate budget kya soch rahe hain?",
+    "fresh_interior_handoff": "Bahut badhiya ji! Maine ye details note kar li hain — hamare manager aapse jald hi khud contact karenge. Dhanyavaad!",
+    # 2026-08-22 -- confirmed live: a customer asked a genuine product
+    # question mid-sequence and the LLM Q&A fallback failed to answer in
+    # time (Sarvam dynamic TTS latency, or a Groq hiccup) FOUR turns in a
+    # row -- the system just silently re-asked the pending question each
+    # time with zero acknowledgment the question was even heard, and the
+    # customer hung up. This is a fast, pre-cached (not dynamic -- plays
+    # instantly regardless of Groq/Sarvam state) acknowledgment played by
+    # _try_fresh_llm_qa specifically when it detected a real question but
+    # couldn't get/play an answer in time, right before falling back to the
+    # normal pending question -- so the customer always hears SOMETHING
+    # responsive before the flow moves on, never dead silence into a repeat.
+    "fresh_qa_unavailable": "Ji, yeh sawaal thoda detail mein hai — main abhi exact jawab confirm nahi kar paa rahi. Maine note kar liya hai, hamari team aapko iske baare mein zaroor batayegi.",
+    # 2026-09-01 -- price question for ANY specific product. Krishna Furniture
+    # doesn't quote prices on the call; the full list + photos go to WhatsApp,
+    # and the ask pivots straight to booking a store visit. Product-agnostic
+    # on purpose (the line reads fine without naming the item).
+    "fresh_price_wa": "Ji, main aapko poori price list photos ke saath abhi WhatsApp par bhej deti hoon. Aap bas apne store visit ki date bata dijiye — ek baar aa kar dekh lenge toh sahi choice khud samajh aa jayegi.",
+    # 2026-09-01 -- "konse X hain / what beds do you have" range answers. Each
+    # names the real variants and ends by asking which one, so the call keeps
+    # moving. See match_fresh_broad_category().
+    "fresh_range_sofa": "Sofa mein toh kaafi options hain ji — L shape, U shape, recliner, sofa cum bed, leather, fabric, aur 2 se lekar 7 seater tak. Aap kis type ka soch rahe hain?",
+    "fresh_range_bed": "Bed mein hamare paas king aur queen size, hydraulic storage wala bed, aur solid sheesham wood bed — sab hai ji. Aapko kis type ka chahiye?",
+    "fresh_range_dining": "Dining mein 4, 6, aur 8 seater sets hain — glass top, marble top, aur solid wood dono mein. Kitne logon ke liye chahiye aapko?",
+    "fresh_range_wardrobe": "Wardrobe mein 2 door, 3 door, sliding, aur modular — sab available hai ji. Kaunsa aapke liye theek rahega?",
+    "fresh_range_office": "Office ke liye tables, revolving chairs, study desks, aur reception tables — sab hai ji. Aapko kya chahiye?",
+    "fresh_range_chair": "Chairs mein office chair, lounge chair, lobby chair, dining chair, aur rocking chair — sab hai ji. Kaunsi dekhna chahenge?",
 }
+
+# ── fresh_have_{product}: per-product "yes we have it" availability line ──────
+# 2026-09-01. One shared template, filled per product from
+# _FRESH_PRODUCT_DISPLAY, so all ~48 lines are phrased identically (voice-QA
+# one, they're all consistent). Populated onto FRESH_CTA_SCRIPT so the
+# existing generate_react_abc_v2_cache.py picks them up on the "fresh" ->
+# simran voice, same PACE/model as every other fresh_ key.
+_FRESH_HAVE_TEMPLATE_HI = (
+    "Ji bilkul, hamare paas {name} available hai — kaafi achhe options hain "
+    "isme. Aap kab tak lene ka plan kar rahe hain?"
+)
+for _pk, _disp in _FRESH_PRODUCT_DISPLAY.items():
+    FRESH_CTA_SCRIPT[f"fresh_have_{_pk}"] = _FRESH_HAVE_TEMPLATE_HI.format(name=_disp["hi"])
 
 # fresh_cta Call 2/3 greetings — same Simran voice as Call 1 (fresh_ prefix, no
 # voice change between cycles for this funnel, per earlier decision). Only the
@@ -998,12 +1516,14 @@ REACT_ABC_INTENTS = {
     "ask_price_range": ["starting range", "starting price", "price kya hai",
                         "rate kya hai", "kitne se shuru", "shuru kitne se",
                         "kitna paisa", "daam kya hai", "kitne ka hai", "kitne ki hai",
-                        "kitni ka hai", "price",
+                        "kitni ka hai", "kitna ka hai", "kitna ki hai", "ka rate", "ki rate",
+                        "price",
                         "how much is it", "how much does it cost", "what's the price",
                         "what is the price",
                         "स्टार्टिंग रेंज", "प्राइस क्या है",
                         "रेट क्या है", "कितने से शुरू", "शुरू कितने से", "कितना पैसा",
-                        "दाम क्या है", "कितने का है", "कितने की है", "कितनी का है", "प्राइस",
+                        "दाम क्या है", "कितने का है", "कितने की है", "कितनी का है",
+                        "कितना का है", "कितना की है", "का रेट", "की रेट", "प्राइस",
                         "sabse sasta kya hai", "sabse mehenga kya hai", "average price kya hai",
                         "range batao", "price list bhejo", "rate list bhejo",
                         "what's the cheapest option", "what's the most expensive option",
@@ -1302,4 +1822,37 @@ REACT_ABC_INTENTS = {
                    "किसी रियल पर्सन से बात कराओ", "एजेंट से कनेक्ट करो",
                    "इंसान चाहिए बात करने के लिए", "प्लीज़ कनेक्ट मी टू अ ह्यूमन",
                    "आई वांट टू टॉक टू अ पर्सन", "ट्रांसफर मी टू एन एजेंट"],
+    # Added 2026-08-20 -- fresh_cta gets a dedicated budget-then-manager-
+    # handoff branch for this (see handle_fresh_cta_turn), distinct from the
+    # normal furniture budget/urgency/visit-date sequence. Other campaigns
+    # have no special branch for it yet and will just fall through to their
+    # existing generic objection handling if it ever fires there.
+    "interior_design": ["interior design", "interior designer", "interior decoration",
+                        "interior dizain", "ghar ka interior", "poora ghar design",
+                        "इंटीरियर डिज़ाइन", "इंटीरियर डिजाइन", "इंटीरियर डेकोरेशन",
+                        "इन्टीरियर डिज़ाइन", "इंटीरियर डिजाइनर", "घर का इंटीरियर",
+                        "इंटीरियर डिज़ाइनर", "पूरा घर डिज़ाइन"],
+    # Added 2026-08-23 -- general "what do you sell" questions, distinct
+    # from ask_offer_scope (which means "which products does the DISCOUNT
+    # apply to", a react_a/b/c exchange-offer concept fresh_cta has no
+    # equivalent of). fresh_cta's handler also treats a real customer
+    # ask_offer_scope match as a synonym for this (confirmed live: "कौन सी
+    # कौन सी फर्नीचर कैटेगरीज हैं?" matched ask_offer_scope's keywords, not
+    # this one, and the intent behind it was clearly "what do you have" —
+    # see handle_fresh_cta_turn for that OR).
+    # "kya kya hai aapke paas"/Devanagari equivalent deliberately REMOVED
+    # 2026-08-23 -- confirmed live (self-caught while testing): this
+    # codebase's 3+-token windowed fallback matches all of a keyword's
+    # tokens in ANY ORDER within a bounded window (see _phrase_in_tokens's
+    # own comment), and every one of that phrase's words (kya/hai/aapke/paas)
+    # is common enough that "aapke paas king size bed hai kya" -- a genuine
+    # availability QUESTION, nothing to do with "what categories do you
+    # sell" -- satisfied all 4 simultaneously. Kept only phrases anchored on
+    # a genuinely distinctive word ("furniture", "categories", "milta").
+    "ask_categories": ["kya kya furniture", "kaunsi categories", "kaun kaun se categories",
+                       "kaunse categories", "kya kya milta hai", "kya kya bechte",
+                       "what categories", "what all furniture", "what do you sell",
+                       "क्या क्या फर्नीचर", "कौनसी कैटेगरीज", "कौन कौन सी कैटेगरीज",
+                       "कौनसे कैटेगरीज", "क्या क्या मिलता है", "क्या क्या बेचते",
+                       "व्हाट कैटेगरीज", "व्हाट डू यू सेल"],
 }

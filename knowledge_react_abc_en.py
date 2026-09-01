@@ -212,24 +212,87 @@ CALL3_SCRIPT_EN = {
 }
 
 FRESH_CTA_SCRIPT_EN = {
-    "fresh_greet_bed": "Hi there! We spoke on WhatsApp — you wanted to take a look at a bed. So, when are you coming by the store? I'll personally be there to meet you.",
-    "fresh_greet_sofa": "Hi there! We spoke on WhatsApp — you wanted to take a look at a sofa. So, when are you coming by the store? I'll personally be there to meet you.",
-    "fresh_greet_wardrobe": "Hi there! We spoke on WhatsApp — you wanted to take a look at a wardrobe. So, when are you coming by the store? I'll personally be there to meet you.",
-    "fresh_greet_dining": "Hi there! We spoke on WhatsApp — you wanted to take a look at a dining set. So, when are you coming by the store? I'll personally be there to meet you.",
-    "fresh_greet_generic": "Hi there! We spoke on WhatsApp about Krishna Furniture. When can you come by the store? I'll be there to meet you.",
+    # 2026-08-20 rewrite -- simplified opener, mirrors the Hindi rewrite in
+    # knowledge_react_abc.py (see that file's FRESH_CTA_SCRIPT comment for
+    # the full rationale): budget/urgency/visit-date are now asked as their
+    # own separate sequential questions later in the call, not bundled into
+    # the greeting.
+    "fresh_greet_bed": "Hi there! We were talking on WhatsApp — you were asking about a bed. How can I help you?",
+    "fresh_greet_sofa": "Hi there! We were talking on WhatsApp — you were asking about a sofa. How can I help you?",
+    "fresh_greet_wardrobe": "Hi there! We were talking on WhatsApp — you were asking about a wardrobe. How can I help you?",
+    "fresh_greet_dining": "Hi there! We were talking on WhatsApp — you were asking about a dining set. How can I help you?",
+    "fresh_greet_chair": "Hi there! We were talking on WhatsApp — you were asking about a chair. How can I help you?",
+    "fresh_greet_generic": "Hi there! We were talking on WhatsApp about Krishna Furniture. What furniture are you looking for? How can I help you?",
     "fresh_objection": "We've got some really beautiful new designs in — you're sure to like them. I'll send them on WhatsApp, but you'll really see the difference once you visit the store. When can you come by?",
     "fresh_appointment_confirmed": "Wonderful! I'll confirm your appointment — our team will be waiting for you. See you soon!",
     "fresh_no_date_close": "No problem at all. I'll send you some lovely options on WhatsApp — take a look at your own pace, and we can plan the visit whenever's convenient.",
     "fresh_soft_defer": "Alright, you can just confirm on WhatsApp — I'll send over a few more options.",
-    "fresh_location_info": "Our showrooms are in Sector 14 Gurgaon, Delhi, and Noida. I'll send you the exact address and a Google Maps link on WhatsApp — you can confirm the date from there, and that's where we'll meet.",
-    "fresh_greet_who_bed": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a bed. When can you come by the store?",
-    "fresh_greet_who_sofa": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a sofa. When can you come by the store?",
-    "fresh_greet_who_wardrobe": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a wardrobe. When can you come by the store?",
-    "fresh_greet_who_dining": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a dining set. When can you come by the store?",
-    "fresh_greet_who_generic": "Hi, this is Krishna Furniture — we spoke on WhatsApp. When can you come by the store?",
+    # 2026-08-23 -- mirrors knowledge_react_abc.py's real 5-store list.
+    "fresh_location_info": "We have five stores in total — two in Gurgaon, and one each in Noida, Faridabad, and Delhi. Which city's location would you like?",
+    "fresh_store_gurgaon": "In Gurgaon we have two stores — one at Atul Kataria Chowk, Sector 14, Old Delhi Road, and the other near Sector 69, Sohna Road, close to Vatika Chowk. I'll send you the exact address and Maps link on WhatsApp.",
+    "fresh_store_noida": "Our Noida store is at A-2, Sector 10. I'll send the exact address on WhatsApp.",
+    "fresh_store_faridabad": "Our Faridabad store is right opposite Sector 28 Metro Station. I'll send the exact address on WhatsApp.",
+    "fresh_store_delhi": "Our Delhi store is in Ghitorni. I'll send the exact address on WhatsApp.",
+    # 2026-08-23 — mirrors knowledge_react_abc.py's category/price Q&A.
+    "fresh_categories_list": "We have sofas, beds, wardrobes, dining sets, office tables, office chairs, lobby chairs, ottomans, TV units, bedroom chairs, garden furniture, and center tables — all available. Which one would you like the price for?",
+    "fresh_price_sofa": "A 3+2 seater sofa starts at ₹45,000, and a 7-seater starts at ₹65,000.",
+    "fresh_price_bed": "A bed starts at ₹24,000, and a season-wood bed starts at ₹50,000.",
+    "fresh_price_wardrobe": "A wardrobe starts at ₹24,000.",
+    "fresh_price_dining": "A 4-seater dining set without stone starts at ₹35,000, and with stone starts at ₹55,000.",
+    "fresh_price_office_table": "An office table starts at ₹10,000.",
+    "fresh_price_office_chair": "An office chair starts at ₹4,500.",
+    "fresh_price_lobby_chair": "A lobby or lounge chair starts at ₹22,000.",
+    "fresh_price_ottoman": "An ottoman or pouffe starts at ₹4,000.",
+    "fresh_price_tv_unit": "A TV unit starts at ₹25,000.",
+    "fresh_price_bedroom_chair": "A bedroom chair starts at ₹22,000.",
+    "fresh_price_garden_furniture": "Garden furniture starts at ₹25,000.",
+    "fresh_price_center_table": "A center or coffee table starts at ₹20,000.",
+    "fresh_price_unavailable": "I don't have the exact price for that with me right now — I'll confirm it and let you know on WhatsApp right away.",
+    # 2026-08-20 rewrite -- dropped the "when can you come by the store"
+    # ending, same reasoning as the Hindi rewrite (confusion_who can fire at
+    # any point in the new sequential flow now, not just as an opener).
+    "fresh_greet_who_bed": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a bed. How can I help you?",
+    "fresh_greet_who_sofa": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a sofa. How can I help you?",
+    "fresh_greet_who_wardrobe": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a wardrobe. How can I help you?",
+    "fresh_greet_who_dining": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a dining set. How can I help you?",
+    "fresh_greet_who_chair": "Hi, this is Krishna Furniture — we spoke on WhatsApp about a chair. How can I help you?",
+    "fresh_greet_who_generic": "Hi, this is Krishna Furniture — we were talking on WhatsApp. What furniture are you looking for? How can I help you?",
     "fresh_price": "The price is quite reasonable — I'll send you the full details on WhatsApp. Once you see it at the store, you'll really understand the value. When can you come by?",
     "fresh_trust": "I completely understand. Come by the store and see for yourself — no obligation at all, that way you can decide with confidence. When can you come by?",
+    # 2026-08-20 — new sequential budget/urgency/visit-date flow (call-1
+    # only), mirrors knowledge_react_abc.py's FRESH_CTA_SCRIPT.
+    "fresh_ask_budget": "Great, and roughly what budget are you thinking for this?",
+    "fresh_ask_urgency": "Got it, thank you. And when do you need this by — are you looking to buy soon, or just exploring for now?",
+    "fresh_ask_visit_date": "Understood. So when can you visit the store? I'll personally be there to meet you.",
+    # 2026-09-01 -- clarify step for a VAGUE date range, mirrors
+    # knowledge_react_abc.py's fresh_ask_visit_day.
+    "fresh_ask_visit_day": "Absolutely! I'll send you all the details and the store address on WhatsApp right now. Just one thing — which exact day will you be able to come? I'll personally meet you there that day.",
+    # 2026-08-20 — interior-design branch: one budget question, then a
+    # manager handoff, no urgency/visit-date asks.
+    "fresh_interior_budget_ask": "Of course, we do offer interior design consultations too! What budget are you thinking for that?",
+    "fresh_interior_handoff": "Wonderful! I've noted that down — our manager will personally reach out to you shortly. Thank you!",
+    # 2026-08-22 -- mirrors knowledge_react_abc.py's fresh_qa_unavailable.
+    "fresh_qa_unavailable": "That's a bit of a detailed question — I'm not able to confirm the exact answer right now. I've noted it down, and our team will definitely get back to you on that.",
+    # 2026-09-01 -- mirrors knowledge_react_abc.py's fresh_price_wa.
+    "fresh_price_wa": "I'll send you the full price list with photos on WhatsApp right now. Just tell me your store visit date — once you see it in person, the right choice becomes clear.",
+    # 2026-09-01 -- mirrors knowledge_react_abc.py's fresh_range_* keys.
+    "fresh_range_sofa": "We have plenty of sofa options — L-shape, U-shape, recliner, sofa cum bed, leather, fabric, and two-seater right up to seven-seater. What type are you thinking of?",
+    "fresh_range_bed": "In beds we have king and queen size, hydraulic storage beds, and solid sheesham wood beds. What type would you like?",
+    "fresh_range_dining": "In dining we have 4, 6, and 8 seater sets — in glass top, marble top, and solid wood. How many people is it for?",
+    "fresh_range_wardrobe": "In wardrobes we have 2 door, 3 door, sliding, and modular — all available. Which one would suit you?",
+    "fresh_range_office": "For office we have tables, revolving chairs, study desks, and reception tables. What do you need?",
+    "fresh_range_chair": "In chairs we have office chairs, lounge chairs, lobby chairs, dining chairs, and rocking chairs. Which one would you like to see?",
 }
+
+# fresh_have_{product} -- English mirror, one shared template filled per
+# product from knowledge_react_abc._FRESH_PRODUCT_DISPLAY. 2026-09-01.
+from knowledge_react_abc import _FRESH_PRODUCT_DISPLAY as _FPD_EN
+_FRESH_HAVE_TEMPLATE_EN = (
+    "Yes absolutely, we do have {name} — there are some really good options "
+    "in it. When are you planning to get it?"
+)
+for _pk, _disp in _FPD_EN.items():
+    FRESH_CTA_SCRIPT_EN[f"fresh_have_{_pk}"] = _FRESH_HAVE_TEMPLATE_EN.format(name=_disp["en"])
 
 ALL_SCRIPTS_EN = {
     "react_a": REACT_A_SCRIPT_EN,

@@ -587,6 +587,32 @@ def ulaw_to_wav(ulaw_bytes: bytes) -> bytes:
 
 
 # ─── STT ─────────────────────────────────────────────────────────────────────
+
+# Vocabulary/context hint passed on every Saaras call (both the auto-detect
+# first pass and the forced-hi-IN retry). Not a hard constraint -- Sarvam has
+# no "restrict to a language subset" mode -- just a bias toward this store's
+# Hindi/Hinglish vocabulary. Expanded 2026-08-22 after a real "lagbhag" ->
+# Gujarati-script misfire.
+_STT_PROMPT = (
+    "Krishna Furniture Gurgaon. Sofa, chair, kursi, bed, palang, "
+    "dining table, wardrobe, almirah. EMI, delivery, offer, discount, "
+    "exchange. Kherki Daula, Bamdoli, Sector 14, Gurugram. "
+    "Lagbhag, jaldi, abhi, budget, hazar, lakh, haan, theek hai, "
+    "samajh gayi, kal, parso, hafta, mahina."
+)
+
+# Any Indic script that is NOT Devanagari, plus Arabic. Devanagari (U+0900-097F)
+# and Latin/ASCII are the only scripts this deployment's callers ever produce
+# (Hindi / English / Hinglish). A hit here means Sarvam's auto-detect misfired
+# the whole turn into another language (Punjabi/Bengali/Gujarati/Tamil/Telugu/
+# Kannada/Malayalam/Odia/Urdu/...) and transcribed real Hindi speech into that
+# language's script -- see transcribe()'s retry block.
+# U+0980-U+0DFF = Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada,
+# Malayalam, Sinhala (contiguous, and all above Devanagari's U+0900-097F).
+# U+0600-U+06FF + U+0750-U+077F = Arabic (Urdu / Sindhi / Kashmiri).
+_FOREIGN_SCRIPT_RE = re.compile("[ঀ-෿؀-ۿݐ-ݿ]")
+
+
 async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> tuple[str, str | None]:
     """
     Returns (transcript_text, stt_detected_language_code). The language code
@@ -612,48 +638,96 @@ async def transcribe(wav_bytes: bytes, call_uuid: str = None, turn: int = 0) -> 
     returned code directly for the en-IN case (skips the transcript-guessing
     entirely) and fall back to detect_lang() otherwise -- see that block's
     comment.
+
+    2026-09-01 -- auto-detect's downside is it can misfire a whole turn into
+    a language this deployment never gets (Punjabi/Malayalam/Gujarati/Bengali
+    /...), rendering real Hindi speech in that script and defeating every
+    downstream Latin/Devanagari keyword match. The foreign-language/script
+    guard below catches that and re-runs the same audio once forced to hi-IN.
+    See _FOREIGN_SCRIPT_RE and the guard block for the full rationale.
     """
     _t0 = time.time()
-    try:
+
+    async def _do_stt(language_code: str):
+        """
+        One Saaras call. Returns (text, stt_lang, stt_lang_prob, http_ok).
+        http_ok is False on a non-200 (already logged); text is "" on empty.
+        """
         client = await _get_sarvam_client()
         r = await client.post(
-                "https://api.sarvam.ai/speech-to-text",
-                headers={"API-Subscription-Key": SARVAM_API_KEY},
-                files={"file": ("audio.wav", wav_bytes, "audio/wav")},
-                data={
-                    "model": "saaras:v3",
-                    "language_code": "unknown",
-                    "with_timestamps": "false",
-                    "with_disfluencies": "false",
-                    "prompt": (
-                        "Krishna Furniture Gurgaon. Sofa, chair, kursi, bed, palang, "
-                        "dining table, wardrobe, almirah. EMI, delivery, offer, discount, "
-                        "exchange. Kherki Daula, Bamdoli, Sector 14, Gurugram."
-                    ),
-                }
-            )
-        _duration_ms = round((time.time() - _t0) * 1000)
-        if r.status_code == 200:
-            body = r.json()
-            text = body.get("transcript", "").strip()
-            stt_lang = body.get("language_code")
-            # Not used as a hard gate yet (see webhook.py's language-tracking
-            # block, right after this function is called, for the word-count
-            # heuristic that replaced an earlier attempt at this) -- logged
-            # so a real misfire can be inspected after the fact and this
-            # threshold revisited with actual numbers instead of guessing.
-            stt_lang_prob = body.get("language_probability")
-            if not text:
-                logger.info(f"[{call_uuid}] Saaras: empty transcript")
-                audit_event(call_uuid, "stt", turn=turn, text="", lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=True, duration_ms=_duration_ms)
-                return "", stt_lang
-            logger.info(f"[{call_uuid}] STT [{stt_lang} p={stt_lang_prob}] → '{text}'")
-            audit_event(call_uuid, "stt", turn=turn, text=text, lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=False, duration_ms=_duration_ms)
-            return text, stt_lang
-        else:
+            "https://api.sarvam.ai/speech-to-text",
+            headers={"API-Subscription-Key": SARVAM_API_KEY},
+            files={"file": ("audio.wav", wav_bytes, "audio/wav")},
+            data={
+                "model": "saaras:v3",
+                "language_code": language_code,
+                "with_timestamps": "false",
+                "with_disfluencies": "false",
+                "prompt": _STT_PROMPT,
+            },
+        )
+        if r.status_code != 200:
             logger.error(f"[{call_uuid}] Saaras STT {r.status_code}: {r.text[:200]}")
+            return "", None, None, False
+        body = r.json()
+        return (
+            body.get("transcript", "").strip(),
+            body.get("language_code"),
+            body.get("language_probability"),
+            True,
+        )
+
+    try:
+        # First pass: full auto-detect. Needed so genuine English speech comes
+        # back as real English text tagged en-IN (a forced hi-IN would mangle
+        # it phonetically into Devanagari -- see this function's docstring).
+        text, stt_lang, stt_lang_prob, ok = await _do_stt("unknown")
+
+        # ── Foreign-language / foreign-script guard ──────────────────────────
+        # This deployment's callers only ever speak Hindi, English or Hinglish
+        # (confirmed with the operator). Sarvam auto-detect ranges over all 24
+        # supported languages with no "restrict to a subset" mode, and it
+        # periodically misfires a whole turn into Punjabi / Malayalam /
+        # Gujarati / Bengali / Odia / etc -- transcribing real Hindi speech
+        # into that language's script, which then matches none of the
+        # Latin/Devanagari keyword sets downstream (confirmed live: "next
+        # Saturday or Sunday" -> Gurmukhi 'ਸੈਟਰਡੇ ਜਾਂ ਸੰਡੇ', silently
+        # dropping a committed appointment). When the first pass comes back
+        # tagged as neither hi-IN nor en-IN, OR its transcript carries a
+        # non-Devanagari Indic / Arabic script, re-run the SAME audio once
+        # forced to hi-IN and take that. Forcing hi-IN can't be the default
+        # (it phonetically mangles genuine full-English speech), but as a
+        # targeted retry only on a detected misfire it strictly beats keeping
+        # garbage. One extra STT round-trip, misfire turns only.
+        if ok and text and (
+            (stt_lang and stt_lang not in ("hi-IN", "en-IN"))
+            or bool(_FOREIGN_SCRIPT_RE.search(text))
+        ):
+            _fs = bool(_FOREIGN_SCRIPT_RE.search(text))
+            logger.info(
+                f"[{call_uuid}] STT misfire (lang={stt_lang} foreign_script={_fs}) "
+                f"orig='{text[:60]}' — retrying forced hi-IN"
+            )
+            _rtext, _rlang, _rprob, _rok = await _do_stt("hi-IN")
+            if _rok and _rtext:
+                audit_event(call_uuid, "stt_retry", turn=turn, text=_rtext,
+                            lang=_rlang or "hi-IN", lang_prob=_rprob,
+                            orig_lang=stt_lang, orig_text=text[:120],
+                            duration_ms=round((time.time() - _t0) * 1000))
+                text, stt_lang, stt_lang_prob = _rtext, (_rlang or "hi-IN"), _rprob
+
+        _duration_ms = round((time.time() - _t0) * 1000)
+
+        if not ok:
             audit_event(call_uuid, "stt", turn=turn, text="", lang="unknown", empty=True, duration_ms=_duration_ms)
             return "", None
+        if not text:
+            logger.info(f"[{call_uuid}] Saaras: empty transcript")
+            audit_event(call_uuid, "stt", turn=turn, text="", lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=True, duration_ms=_duration_ms)
+            return "", stt_lang
+        logger.info(f"[{call_uuid}] STT [{stt_lang} p={stt_lang_prob}] → '{text}'")
+        audit_event(call_uuid, "stt", turn=turn, text=text, lang=stt_lang or "unknown", lang_prob=stt_lang_prob, empty=False, duration_ms=_duration_ms)
+        return text, stt_lang
     except Exception as e:
         logger.error(f"[{call_uuid}] STT error: {e}")
         audit_event(call_uuid, "stt", turn=turn, text="", lang="unknown", empty=True, duration_ms=round((time.time() - _t0) * 1000))

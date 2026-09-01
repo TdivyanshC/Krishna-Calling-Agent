@@ -119,15 +119,22 @@ POLL_INTERVAL = 20   # seconds
 
 FRESH_CTA_CAMPAIGN_ID = "8fab0334-6d8c-4b71-be72-9d170c8ad3fc"
 
-# Cutoff for detect_and_schedule_fresh_leads(): only contacts created AFTER
-# this process started are eligible for the new 5-hour-first-call detector.
-# Captured once at import time (≈ deploy/restart time), not recomputed per
-# tick or per calendar day — deliberately excludes the pre-existing backlog
-# of old contacts (53/73 at the time this was written) that have no
-# outbound_leads row today; backfilling those would immediately queue real
-# calls to people who messaged days ago, not "5 hours ago." Anything older
-# than this cutoff is simply never touched by this detector.
-FRESH_LEAD_DETECTOR_STARTED_AT = datetime.now(timezone.utc)
+# Lookback window for detect_and_schedule_fresh_leads() and
+# promote_orphaned_whatsapp_leads(): only contacts/leads created within this
+# many days are eligible. Recomputed fresh on every call (NOT captured once
+# at import time) -- deliberately different from the old design.
+#
+# 2026-08-20: this used to be FRESH_LEAD_DETECTOR_STARTED_AT, a cutoff fixed
+# to process-start time at import. Confirmed live: that permanently excluded
+# any contact created before whichever moment the orchestrator most recently
+# started -- not "processed on the next restart," excluded forever, since
+# every future restart just moved the cutoff further forward. Found via a
+# real 13-day-old WhatsApp lead (WARM, score 69, real product interest)
+# that had a contacts row from 2026-08-07 but could never be detected by any
+# future run. A rolling window self-heals across restarts instead: anything
+# within FRESH_LEAD_LOOKBACK_DAYS with no outbound_leads row yet is still
+# eligible next tick, regardless of how long the orchestrator was down.
+FRESH_LEAD_LOOKBACK_DAYS = 30
 
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -270,6 +277,17 @@ async def get_due_fresh_leads(client: httpx.AsyncClient, slots: int, active_camp
     corresponding outbound_leads rows in that same order, so order=created_at.asc
     here is a proxy for fire_at order, not a literal re-sort of it. If promotion
     and dispatch ever drift out of the same tick, this proxy would drift too.
+
+    2026-08-20: this used to also require product_interest=not.is.null
+    (added 2026-08-13, undocumented). Confirmed live: detect_and_schedule_
+    fresh_leads() (below) never sets product_interest at all, and leads.
+    interested_in -- the only other source promote_due_scheduled_actions()
+    tries -- was 0/45 populated as of 2026-07-07, so that filter excluded
+    essentially every fresh_cta lead, permanently (43-lead, month-old
+    backlog found and manually cleared this same day). Dropped -- the
+    generic fresh_greet_generic opener (knowledge_react_abc.py) already
+    handles a null/unmatched product safely and was used for all 42 of
+    today's manually-fired calls with no issue.
     """
     if not active_campaign_ids:
         return []
@@ -284,7 +302,6 @@ async def get_due_fresh_leads(client: httpx.AsyncClient, slots: int, active_camp
         f"&status=in.(pending,unanswered,mid_answered)"
         f"&dnc=eq.false"
         f"&visit_date_status=is.null"
-        f"&product_interest=not.is.null"
         f"&campaign_id=in.({campaign_in})"
         f"&or=(cooldown_until.is.null,cooldown_until.lte.{now_iso})"
         f"&pickup_attempt_count=lt.8"  # matches PICKUP_CADENCE's fresh_cta max_attempts=8 (2026-08-10)
@@ -612,9 +629,9 @@ async def detect_and_schedule_fresh_leads(client: httpx.AsyncClient):
     contact first, the other finds a row already exists and skips it. No
     conflict, no duplicate calls, no ordering dependency between the two.
 
-    Only contacts created AFTER FRESH_LEAD_DETECTOR_STARTED_AT (this
-    process's start time) are eligible — see that constant's comment for why
-    the pre-existing backlog is deliberately excluded rather than backfilled.
+    Only contacts created within the last FRESH_LEAD_LOOKBACK_DAYS are
+    eligible — see that constant's comment for why this is a rolling window
+    recomputed per call, not a fixed process-start-time cutoff.
 
     Query technique: a single PostgREST embed + `is.null` filter expresses
     the LEFT JOIN / NOT EXISTS pattern in one request (verified live against
@@ -624,7 +641,7 @@ async def detect_and_schedule_fresh_leads(client: httpx.AsyncClient):
     function and was written against scheduled_actions rows one at a time;
     no need to match that shape here when a single query does the job).
     """
-    cutoff_iso = FRESH_LEAD_DETECTOR_STARTED_AT.strftime("%Y-%m-%dT%H:%M:%SZ")
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=FRESH_LEAD_LOOKBACK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
     url = (
         f"{SUPABASE_URL}/rest/v1/contacts"
         f"?select=id,phone,created_at,outbound_leads(id)"
@@ -692,10 +709,131 @@ async def detect_and_schedule_fresh_leads(client: httpx.AsyncClient):
                 "cooldown_until": cooldown_until_utc,
             },
         )
-        if create_r.status_code not in (200, 201):
+        if create_r.status_code == 409:
+            # Phone already has an outbound_leads row (created via a different
+            # path -- e.g. promote_orphaned_whatsapp_leads() below, or a manual
+            # backfill) with no contact_id set, so the NOT-EXISTS-by-contact_id
+            # join above never sees it as "already handled" and this contact
+            # gets re-selected and re-fails every single tick, forever.
+            # Confirmed live 2026-08-20: 2 contacts stuck in this loop since
+            # this detector started. Backfill contact_id onto the existing row
+            # instead of just logging -- makes it visible to the join next
+            # tick, so this stops retrying without needing a second call.
+            # params= (not spliced into the URL string) so httpx percent-encodes
+            # '+' as %2B -- a raw '+' left in the query string is parsed as a
+            # space by PostgREST and silently zero-matches every row (same
+            # documented bug as supabase_calling.py's finalize_call() PATCH).
+            _phone_or = ",".join(f"phone.eq.{v}" for v in {phone, phone.lstrip("+")})
+            backfill_r = await client.patch(
+                f"{SUPABASE_URL}/rest/v1/outbound_leads",
+                headers={**sb_headers(), "Prefer": "return=representation"},
+                params={"or": f"({_phone_or})", "contact_id": "is.null"},
+                json={"contact_id": contact_id},
+            )
+            if backfill_r.status_code == 200 and backfill_r.json():
+                log.info(f"detect_and_schedule_fresh_leads: contact {contact_id} phone={phone} already had an outbound_leads row — backfilled contact_id so it stops retrying")
+            else:
+                log.error(f"detect_and_schedule_fresh_leads: 409 for contact {contact_id} phone={phone}, backfill also failed: {backfill_r.status_code} {backfill_r.text[:200]}")
+        elif create_r.status_code not in (200, 201):
             log.error(f"detect_and_schedule_fresh_leads: create failed for contact {contact_id}: {create_r.status_code} {create_r.text[:200]}")
         else:
             log.info(f"detect_and_schedule_fresh_leads: scheduled contact={contact_id} phone={phone} fire_at={cooldown_until_utc}")
+
+
+async def promote_orphaned_whatsapp_leads(client: httpx.AsyncClient):
+    """
+    Safety net for `leads.contact_id` never getting populated by the
+    WhatsApp/n8n integration (that write path lives outside this codebase --
+    confirmed live 2026-08-20, out of reach to fix from here). Both
+    promote_due_scheduled_actions() and detect_and_schedule_fresh_leads()
+    key off `contacts`/`scheduled_actions`, so a `leads` row with no
+    contact_id is invisible to either -- permanently, not just delayed.
+
+    Confirmed live same day: 14 of 22 real fresh_cta/WhatsApp leads from the
+    prior 7 days had contact_id=NULL and had never been called at all,
+    despite being real, recent, non-DNC leads with a captured conversation
+    (the CRM showed them as "NOT CALLED YET" while this repo's own
+    calling-pipeline tables had no record of them whatsoever).
+
+    Queries `leads` directly (the actual WhatsApp/CRM source of truth, not
+    `contacts`) for fresh_cta rows in the same FRESH_LEAD_LOOKBACK_DAYS
+    window, and creates an outbound_leads row for any phone that doesn't
+    already have one -- independent of contact_id. Mirrors
+    detect_and_schedule_fresh_leads()'s creation shape (+15min first-touch
+    target, clamped to fresh_cta's calling window); product_interest is
+    pulled from leads.interested_in via _real_interest() (handles the
+    literal string "null" some rows carry instead of a true NULL).
+    """
+    cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=FRESH_LEAD_LOOKBACK_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    leads_url = (
+        f"{SUPABASE_URL}/rest/v1/leads"
+        f"?funnel_type=eq.fresh_cta&source=eq.whatsapp&dnc=eq.false"
+        f"&created_at=gte.{cutoff_iso}"
+        f"&select=id,phone,interested_in,created_at"
+        f"&order=created_at.asc"
+    )
+    r = await client.get(leads_url, headers=sb_headers())
+    if r.status_code != 200:
+        log.error(f"promote_orphaned_whatsapp_leads: leads fetch failed: {r.status_code} {r.text[:200]}")
+        return
+    candidate_leads = r.json()
+    if not candidate_leads:
+        return
+
+    # Batch-fetch existing outbound_leads phones in one call rather than a
+    # per-lead existence check (same window is small enough -- 22 rows on
+    # the day this was written) -- match both with/without '+' since
+    # outbound_leads.phone is stored inconsistently across write paths
+    # (same caveat as everywhere else in this file).
+    existing_url = (
+        f"{SUPABASE_URL}/rest/v1/outbound_leads"
+        f"?tenant_id=eq.{TENANT_ID}&funnel_type=eq.fresh_cta"
+        f"&select=phone"
+    )
+    r2 = await client.get(existing_url, headers=sb_headers())
+    existing_phones = {row["phone"].lstrip("+") for row in r2.json()} if r2.status_code == 200 else set()
+
+    orphaned = [lead for lead in candidate_leads if (lead.get("phone") or "").lstrip("+") not in existing_phones]
+    if not orphaned:
+        return
+
+    log.info(f"promote_orphaned_whatsapp_leads: {len(orphaned)} WhatsApp lead(s) with no outbound_leads row at all")
+
+    _fresh_cta_end_hour = CALL_END_HOUR_BY_FUNNEL.get("fresh_cta", CALL_END_HOUR_DEFAULT)
+    for lead in orphaned:
+        raw_phone = lead.get("phone") or ""
+        if not raw_phone:
+            log.error(f"promote_orphaned_whatsapp_leads: lead {lead['id']} has no phone — skipping")
+            continue
+        phone = raw_phone if raw_phone.startswith("+") else f"+{raw_phone}"
+        product_interest = _real_interest(lead.get("interested_in"))
+
+        created_dt_utc = datetime.fromisoformat(lead["created_at"].replace("Z", "+00:00"))
+        target_ist = created_dt_utc.astimezone(IST) + timedelta(minutes=15)
+        if target_ist.hour < CALL_START_HOUR:
+            target_ist = target_ist.replace(hour=CALL_START_HOUR, minute=0, second=0, microsecond=0)
+        elif target_ist.hour >= _fresh_cta_end_hour:
+            target_ist = (target_ist + timedelta(days=1)).replace(hour=CALL_START_HOUR, minute=0, second=0, microsecond=0)
+        cooldown_until_utc = target_ist.astimezone(timezone.utc).isoformat()
+
+        create_r = await client.post(
+            f"{SUPABASE_URL}/rest/v1/outbound_leads",
+            headers=sb_headers(),
+            json={
+                "tenant_id":        TENANT_ID,
+                "phone":            phone,
+                "funnel_type":      "fresh_cta",
+                "campaign_type":    "fresh_cta",
+                "campaign_id":      FRESH_CTA_CAMPAIGN_ID,
+                "status":           "pending",
+                "product_interest": product_interest,
+                "cooldown_until":   cooldown_until_utc,
+            },
+        )
+        if create_r.status_code not in (200, 201):
+            log.error(f"promote_orphaned_whatsapp_leads: create failed for lead {lead['id']}: {create_r.status_code} {create_r.text[:200]}")
+        else:
+            log.info(f"promote_orphaned_whatsapp_leads: scheduled lead={lead['id']} phone={phone} product={product_interest} fire_at={cooldown_until_utc}")
 
 
 async def sync_whatsapp_visit_dates(client: httpx.AsyncClient):
@@ -1139,6 +1277,7 @@ async def cleanup_stuck_leads(client: httpx.AsyncClient):
 async def tick(client: httpx.AsyncClient):
     await promote_due_scheduled_actions(client)
     await detect_and_schedule_fresh_leads(client)
+    await promote_orphaned_whatsapp_leads(client)
     await sync_whatsapp_visit_dates(client)
     await cleanup_stuck_leads(client)
 

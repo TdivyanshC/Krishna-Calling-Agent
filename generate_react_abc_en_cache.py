@@ -34,6 +34,10 @@ PACE = 0.95
 # skip-if-cached-and-not-forced structure for consistency / safe re-runs.
 FORCE_REGEN_ALL = False
 FORCE_REGEN: set[str] = set()
+# 2026-08-22 -- fresh_cta voice-consistency regen (Sarvam model drift fix,
+# all 24 FRESH_CTA_SCRIPT_EN keys) ran and completed here, 0 failures.
+# Removed from FORCE_REGEN afterward -- no need to keep re-paying for
+# audio that's already correctly cached.
 
 
 def _is_filler(key: str) -> bool:
