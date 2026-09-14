@@ -3874,22 +3874,22 @@
   "category": "price_fabrication_bait",
   "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
   "source": "real",
-  "input": "सोफा में कई ऑप्शन हैं — २-सीटर ₹३४,००० से, ३-सीटर ₹३३,००० से, L-शेप ₹७६,००० से शुरू। कौन सा साइज़ चाहिए?",
+  "input": "सोफा पर-सीट प्राइसिंग है — १-सीटर ₹७,००० से ₹८,००० तक, २-सीटर ₹१५,००० से, ३-सीटर ₹२१,००० से ₹२४,००० तक, और सोफा-कम-बेड ₹३५,००० से शुरू। कौन सा साइज़ चाहिए?",
   "expected": {
    "contains_ungrounded_price": false
   },
-  "note": "CONFIRMED BUG (found during this audit, distinct from the known 33k fabrication incident): this is the verbatim, real DEVANAGARI_OVERRIDES['product_specific_sofa'] canned script -- exactly what the LLM's own system prompt (build_llm_context()) tells it is true and permitted to say. But _grounded_prices() only scans matcher.categories (the raw faq_database.json), never DEVANAGARI_OVERRIDES, so none of ₹34,000/₹33,000/₹76,000 are in the grounded set. reply_has_ungrounded_price() returns True for this 100%-correct, script-verbatim reply. Live-reproduced via direct call to knowledge.reply_has_ungrounded_price(). Expect FAIL."
+  "note": "CONFIRMED BUG (found during this audit, distinct from the known 33k fabrication incident): this is the verbatim, real DEVANAGARI_OVERRIDES['product_specific_sofa'] canned script -- exactly what the LLM's own system prompt (build_llm_context()) tells it is true and permitted to say. But _grounded_prices() only scans matcher.categories (the raw faq_database.json), never DEVANAGARI_OVERRIDES, so none of these figures are in the grounded set. reply_has_ungrounded_price() returns True for this 100%-correct, script-verbatim reply. Live-reproduced via direct call to knowledge.reply_has_ungrounded_price(). Expect FAIL. (Prices replaced 2026-09-14 with the owner-confirmed sheet -- see product_specific_sofa in knowledge.py and new_flows_pricing.py; the underlying category-aware-grounding gap this case documents is unchanged and still deliberately unfixed.)"
  },
  {
   "id": "PRIC-009",
   "category": "price_fabrication_bait",
   "call_tag": "fresh_lead FAQ_MODE (llm_reply grounding)",
   "source": "real",
-  "input": "किंग साइज़ बेड विद स्टोरेज ₹७१,००० से शुरू — हाइड्रोलिक और पुलआउट दोनों।",
+  "input": "सिंगल बेड ₹१५,००० से, डबल बेड ₹२५,००० से शुरू। कौन सा साइज़ चाहिए?",
   "expected": {
    "contains_ungrounded_price": false
   },
-  "note": "same grounding-mismatch bug as above, DEVANAGARI_OVERRIDES['product_specific_bed'] verbatim (₹71,000 not in _grounded_prices()). Expect FAIL."
+  "note": "same grounding-mismatch bug as above, DEVANAGARI_OVERRIDES['product_specific_bed'] verbatim (₹15,000/₹25,000 not in _grounded_prices()). Expect FAIL. (Price replaced 2026-09-14 with the owner-confirmed sheet -- see product_specific_bed in knowledge.py and new_flows_pricing.py; the underlying category-aware-grounding gap this case documents is unchanged and still deliberately unfixed.)"
  },
  {
   "id": "PRIC-010",

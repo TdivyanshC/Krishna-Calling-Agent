@@ -817,15 +817,33 @@ def save_dynamic_audio(reply: str, wav_bytes: bytes) -> str:
 PRODUCT_KEYWORDS = {
     "sofa","bed","chair","dining","table","wardrobe","almirah","office",
     "curtain","mattress","palang","kursi","mej","almari","furniture",
+    "recliner",
     "सोफा","बेड","कुर्सी","डाइनिंग","मेज","टेबल","वार्डरोब","अलमारी",
-    "गद्दा","पर्दा","फर्नीचर","चेयर","शेयर",
+    "गद्दा","पर्दा","फर्नीचर","चेयर","शेयर","रिक्लाइनर",
 }
 
 BUDGET_KEYWORDS = {
     "hazaar","lakh","thousand","budget","price","kitna","rate","rupee",
-    "50","20","30","40","10","15","25","1","2","3","4","5",
     "हज़ार","लाख","बजट","रुपये","कितने",
 }
+# Removed 2026-09-14: the bare digit strings ("1".."5","10","15",...,"50")
+# that used to live in this set. extract_budget()'s _WMAP above does a raw
+# substring replace of number-WORDS to digits across the whole utterance
+# before this set is even checked -- so "एक" (an extremely common Hindi
+# word for "a/an", not just the numeral "one") turns into a literal "1"
+# inside completely unrelated sentences. Confirmed live 2026-09-14 on call
+# 3139934f-...: "मेरी कॉल एक अपने एग्जीक्यूटिव से अरेंज करा सकते हो क्या?"
+# ("can you arrange my call with your executive?") got "एक" rewritten to
+# "1", which then matched the bare "1" that used to be in this set --
+# extract_budget() returned the ENTIRE corrupted sentence as "the budget",
+# which skipped the match_faq_detour() call below entirely (only runs when
+# budget is falsy) and silently swallowed a real request to talk to a
+# human, replying with a budget/urgency question instead. The word-based
+# entries above (hazaar/lakh/budget/price/kitna/rate/rupee) are legitimate,
+# real budget-adjacent signals and are unaffected by this removal -- actual
+# numeric budgets are already caught properly by the regexes above (lines
+# ~866-882), which require a real number pattern, optionally with a
+# hazaar/lakh/thousand unit, not a bare 1-2 digit fallback keyword.
 
 URGENCY_KEYWORDS = {
     "week","month","mahine","hafte","din","day","jaldi","abhi","asap",
@@ -841,7 +859,7 @@ def extract_product(text: str) -> str | None:
                 "सोफा":"sofa","शेयर":"sofa","बेड":"bed","कुर्सी":"chair",
                 "चेयर":"chair","डाइनिंग":"dining","मेज":"table","टेबल":"table",
                 "वार्डरोब":"wardrobe","अलमारी":"wardrobe","गद्दा":"mattress",
-                "पर्दा":"curtain","फर्नीचर":"furniture",
+                "पर्दा":"curtain","फर्नीचर":"furniture","रिक्लाइनर":"recliner",
             }
             return deva_map.get(kw, kw)
     return None
@@ -900,8 +918,10 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
     # state — a call stuck looping any branch (faq_mode included) for 25 turns
     # forces the same DONE/goodbye/hangup path rather than running unbounded.
     if session.turn_count >= 25:
+        from tts_engine import STATIC_RESPONSES
         session.state = "DONE"
-        reply = "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+        _lang = getattr(session, "lang", "hi")
+        reply = STATIC_RESPONSES["turn_cap_close"].get(_lang) or STATIC_RESPONSES["turn_cap_close"]["hi"]
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply))
         return reply, "turn_cap_close"
@@ -921,8 +941,10 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             except ValueError:
                 _elapsed = 0
             if _elapsed > 180:
+                from tts_engine import STATIC_RESPONSES
                 session.state = "DONE"
-                reply = "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                _lang = getattr(session, "lang", "hi")
+                reply = STATIC_RESPONSES["duration_cap_close"].get(_lang) or STATIC_RESPONSES["duration_cap_close"]["hi"]
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", reply))
                 return reply, "duration_cap_close"
@@ -962,7 +984,9 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             "हाँ बोलिए","हाँ जी बोलिए","ji","haan","han","ha","hello","hi"
         }
         if pure_greeting and session.turn_count <= 3:
-            reply = "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब, या कुछ और?"
+            from tts_engine import STATIC_RESPONSES
+            _lang = getattr(session, "lang", "hi")
+            reply = STATIC_RESPONSES["ask_product"].get(_lang) or STATIC_RESPONSES["ask_product"]["hi"]
             session.conversation.append(("user", text_raw))
             session.conversation.append(("assistant", reply))
             return reply, "ask_product"
@@ -1032,15 +1056,17 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             # resetting the streak to 0 forever, so it never reaches 3. This
             # counter closes that gap independent of the streak.
             session.not_understood_total = getattr(session, "not_understood_total", 0) + 1
+            from tts_engine import STATIC_RESPONSES
+            _lang = getattr(session, "lang", "hi")
             if session.not_understood_streak >= 3 or session.not_understood_total >= 5:
                 session.state = "DONE"
-                reply = "ठीक है सर, लगता है अभी लाइन साफ़ नहीं आ रही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                reply = STATIC_RESPONSES["not_understood_close"].get(_lang) or STATIC_RESPONSES["not_understood_close"]["hi"]
                 source = "not_understood_close"
             elif already_asked >= 1:
-                reply = "माफ़ करना, समझ नहीं पाई — sofa, bed, dining, wardrobe, कौन सा देखना है?"
+                reply = STATIC_RESPONSES["not_understood"].get(_lang) or STATIC_RESPONSES["not_understood"]["hi"]
                 source = "not_understood"
             else:
-                reply = "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब, या कुछ और?"
+                reply = STATIC_RESPONSES["ask_product"].get(_lang) or STATIC_RESPONSES["ask_product"]["hi"]
                 source = "ask_product"
             session.conversation.append(("user", text_raw))
             session.conversation.append(("assistant", reply))
@@ -1082,6 +1108,8 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
             # this caller at all right now", not a per-state count.
             vague_words = {"लगभग","lagbhag","roughly","almost","करीब","तकरीबन","शायद","pata nahi","nahi pata","hmm","hm","umm","uhh"}
             tl_check = text_fixed.lower().strip(".,!? ।")
+            from tts_engine import STATIC_RESPONSES
+            _lang = getattr(session, "lang", "hi")
             if any(v in tl_check for v in vague_words) or len(tl_check.split()) <= 1:
                 session.not_understood_streak = getattr(session, "not_understood_streak", 0) + 1
                 # not_understood_total — same never-reset counter as
@@ -1089,16 +1117,32 @@ def state_machine(text_fixed: str, text_raw: str, session, call_uuid: str) -> tu
                 session.not_understood_total = getattr(session, "not_understood_total", 0) + 1
                 if session.not_understood_streak >= 3 or session.not_understood_total >= 5:
                     session.state = "DONE"
-                    reply = "ठीक है सर, लगता है अभी लाइन साफ़ नहीं आ रही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!"
+                    reply = STATIC_RESPONSES["not_understood_close"].get(_lang) or STATIC_RESPONSES["not_understood_close"]["hi"]
                     source = "not_understood_close"
                 else:
-                    reply = "माफ़ करना, ठीक से समझ नहीं पाई — budget roughly कितना सोच रहे हैं?"
+                    reply = STATIC_RESPONSES["not_understood_budget"].get(_lang) or STATIC_RESPONSES["not_understood_budget"]["hi"]
                     source = "not_understood_budget"
                 session.conversation.append(("user", text_raw))
                 session.conversation.append(("assistant", reply))
                 return reply, source
             session.not_understood_streak = 0
-            reply = "Budget rough idea भी चलेगा — जैसे ₹२०,००० से ₹५०,००० या इससे ऊपर?"
+            # Repeat-breaker (added 2026-09-14): confirmed live on call
+            # 3139934f-... that this exact line played 3 times verbatim in
+            # one call for 3 totally different unrecognized utterances
+            # ("इसकी प्राइस क्या है?", "सोफा के क्या क्या ऑप्शंस हैं?",
+            # "आप एआई हो या इंसान हो?" / "Are you a human or an AI?") --
+            # match_faq_detour() legitimately found nothing new each time
+            # (the sofa question had already fired once this call and is
+            # deliberately deduped), but there was no fallback besides this
+            # static reprompt, so a caller asking 3 different real questions
+            # heard the bot ignore all of them identically. After the first
+            # repeat, route to the grounded, language-aware LLM fallback
+            # instead of parroting the same sentence a third time.
+            _budget_reask_count = getattr(session, "ask_budget_repeat_count", 0)
+            session.ask_budget_repeat_count = _budget_reask_count + 1
+            if _budget_reask_count >= 1:
+                return llm_reply(text_fixed, session, call_uuid)
+            reply = STATIC_RESPONSES["ask_budget"].get(_lang) or STATIC_RESPONSES["ask_budget"]["hi"]
         session.conversation.append(("user", text_raw))
         session.conversation.append(("assistant", reply))
         return reply, "qualify_urgency" if budget else "ask_budget"

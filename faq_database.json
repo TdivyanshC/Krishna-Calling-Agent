@@ -2,7 +2,7 @@
   "faq_system": {
     "version": "1.0",
     "language": "hi-IN",
-    "confidence_threshold": 0.20,
+    "confidence_threshold": 0.2,
     "categories": [
       {
         "id": "delivery_delay",
@@ -62,11 +62,24 @@
             "Kya aapke paas bill number hai?",
             "Kya aapko salesperson ka naam yaad hai?"
           ],
-          "escalation_keywords": ["complaint", "cancel", "refund", "angry", "bahut zyada", "frustrated"]
+          "escalation_keywords": [
+            "complaint",
+            "cancel",
+            "refund",
+            "angry",
+            "bahut zyada",
+            "frustrated"
+          ]
         },
         "context_tracking": {
-          "requires_info": ["order_number", "salesperson_name"],
-          "next_actions": ["transfer_to_salesperson", "check_order_status"]
+          "requires_info": [
+            "order_number",
+            "salesperson_name"
+          ],
+          "next_actions": [
+            "transfer_to_salesperson",
+            "check_order_status"
+          ]
         }
       },
       {
@@ -128,8 +141,14 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["preferred_city", "customer_contact"],
-          "next_actions": ["share_location", "send_whatsapp"]
+          "requires_info": [
+            "preferred_city",
+            "customer_contact"
+          ],
+          "next_actions": [
+            "share_location",
+            "send_whatsapp"
+          ]
         }
       },
       {
@@ -172,8 +191,14 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["old_furniture_type", "new_furniture_interest"],
-          "next_actions": ["calculate_discount", "schedule_visit"]
+          "requires_info": [
+            "old_furniture_type",
+            "new_furniture_interest"
+          ],
+          "next_actions": [
+            "calculate_discount",
+            "schedule_visit"
+          ]
         }
       },
       {
@@ -222,7 +247,10 @@
           ]
         },
         "context_tracking": {
-          "next_actions": ["share_product_catalog", "schedule_visit"]
+          "next_actions": [
+            "share_product_catalog",
+            "schedule_visit"
+          ]
         }
       },
       {
@@ -275,9 +303,24 @@
         "response": {
           "script": "Ji sir/mam, humare paas wide range of wooden furniture hai aur hum deal karte hain home furniture, office furniture, curtains, aur mattresses mein. Collection mein included hai sofas, beds, dining tables, wardrobes, office chairs, workstations aur bahut kuch. Prices product design, size, aur material par depend karti hain. Batayein aap kaunsa product dhundh rahe hain, main available options aur pricing share karungi.",
           "product_categories": {
-            "home_furniture": ["Sofas", "Beds", "Dining Tables", "Wardrobes", "Living Room Sets"],
-            "office_furniture": ["Office Chairs", "Workstations", "Study Tables", "Office Storage"],
-            "other": ["Curtains", "Mattresses", "Decorative Items"]
+            "home_furniture": [
+              "Sofas",
+              "Beds",
+              "Dining Tables",
+              "Wardrobes",
+              "Living Room Sets"
+            ],
+            "office_furniture": [
+              "Office Chairs",
+              "Workstations",
+              "Study Tables",
+              "Office Storage"
+            ],
+            "other": [
+              "Curtains",
+              "Mattresses",
+              "Decorative Items"
+            ]
           },
           "price_ranges": {
             "budget": "₹5,000 - ₹25,000",
@@ -291,8 +334,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["budget_range", "furniture_type", "room_type"],
-          "next_actions": ["filter_products", "share_catalog"]
+          "requires_info": [
+            "budget_range",
+            "furniture_type",
+            "room_type"
+          ],
+          "next_actions": [
+            "filter_products",
+            "share_catalog"
+          ]
         }
       },
       {
@@ -381,8 +431,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["room_type", "style_preference", "budget"],
-          "next_actions": ["schedule_designer_visit", "share_portfolio"]
+          "requires_info": [
+            "room_type",
+            "style_preference",
+            "budget"
+          ],
+          "next_actions": [
+            "schedule_designer_visit",
+            "share_portfolio"
+          ]
         }
       },
       {
@@ -426,8 +483,14 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["delivery_city", "contact_number"],
-          "next_actions": ["share_website", "calculate_delivery_charges"]
+          "requires_info": [
+            "delivery_city",
+            "contact_number"
+          ],
+          "next_actions": [
+            "share_website",
+            "calculate_delivery_charges"
+          ]
         }
       },
       {
@@ -466,8 +529,14 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["customer_name", "contact_number", "preferred_area"],
-          "next_actions": ["send_whatsapp_location"]
+          "requires_info": [
+            "customer_name",
+            "contact_number",
+            "preferred_area"
+          ],
+          "next_actions": [
+            "send_whatsapp_location"
+          ]
         }
       },
       {
@@ -503,8 +572,14 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["delivery_location", "product_selected"],
-          "next_actions": ["calculate_charges", "connect_sales_team"]
+          "requires_info": [
+            "delivery_location",
+            "product_selected"
+          ],
+          "next_actions": [
+            "calculate_charges",
+            "connect_sales_team"
+          ]
         }
       },
       {
@@ -548,8 +623,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["product_type", "quantity", "contact_details"],
-          "next_actions": ["escalate_to_sales", "schedule_callback"]
+          "requires_info": [
+            "product_type",
+            "quantity",
+            "contact_details"
+          ],
+          "next_actions": [
+            "escalate_to_sales",
+            "schedule_callback"
+          ]
         }
       },
       {
@@ -612,8 +694,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["seating_capacity", "material_preference", "budget"],
-          "next_actions": ["filter_sofa_products", "share_options"]
+          "requires_info": [
+            "seating_capacity",
+            "material_preference",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_sofa_products",
+            "share_options"
+          ]
         }
       },
       {
@@ -648,8 +737,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["bed_size", "storage_requirement", "budget"],
-          "next_actions": ["filter_bed_products", "share_options"]
+          "requires_info": [
+            "bed_size",
+            "storage_requirement",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_bed_products",
+            "share_options"
+          ]
         }
       },
       {
@@ -682,8 +778,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["seating_capacity", "material_preference", "budget"],
-          "next_actions": ["filter_dining_products", "share_options"]
+          "requires_info": [
+            "seating_capacity",
+            "material_preference",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_dining_products",
+            "share_options"
+          ]
         }
       },
       {
@@ -718,8 +821,15 @@
           ]
         },
         "context_tracking": {
-          "requires_info": ["office_type", "furniture_items", "budget"],
-          "next_actions": ["filter_office_products", "share_options"]
+          "requires_info": [
+            "office_type",
+            "furniture_items",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_office_products",
+            "share_options"
+          ]
         }
       },
       {
@@ -888,6 +998,157 @@
           "follow_up_questions": [
             "Kis store ke timing chahiye?",
             "Kab visit karna chahte hain?"
+          ]
+        }
+      },
+      {
+        "id": "product_specific_wardrobe",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "wardrobe",
+            "almirah",
+            "almari",
+            "2 door wardrobe",
+            "3 door wardrobe",
+            "sliding wardrobe",
+            "modular wardrobe"
+          ],
+          "variations": [
+            "cupboard",
+            "clothes storage",
+            "bedroom wardrobe",
+            "wardrobe price",
+            "two door almirah",
+            "three door almirah"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, wardrobes ki range available hai — 2-door aur 3-door, sliding aur modular dono options. Prices ₹37,500 se start hoti hain. Kaunsa size chahiye?",
+          "follow_up_questions": [
+            "2-door ya 3-door chahiye?",
+            "Sliding ya swing-door preference?",
+            "Bedroom ka size kitna hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": [
+            "door_count",
+            "style_preference",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_wardrobe_products",
+            "share_options"
+          ]
+        }
+      },
+      {
+        "id": "product_specific_chair",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "chair",
+            "lobby chair",
+            "lounge chair",
+            "kursi",
+            "bar chair",
+            "accent chair"
+          ],
+          "variations": [
+            "waiting area chair",
+            "reception chair",
+            "single chair",
+            "chair price"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, lobby aur lounge chairs available hain, kayi designs mein. Prices ₹16,500 se start hoti hain. Kis jagah ke liye chahiye?",
+          "follow_up_questions": [
+            "Kitni chairs chahiye?",
+            "Kis space ke liye — lobby, lounge ya balcony?",
+            "Fabric ya leatherette preference?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": [
+            "quantity",
+            "space_type",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_chair_products",
+            "share_options"
+          ]
+        }
+      },
+      {
+        "id": "product_specific_mattress",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "mattress",
+            "gadda",
+            "single mattress",
+            "double mattress"
+          ],
+          "variations": [
+            "foam mattress",
+            "spring mattress",
+            "mattress price"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, mattresses ki range available hai — single aur double dono. Prices ₹10,000 se start hoti hain. Kaunsa size chahiye?",
+          "follow_up_questions": [
+            "Single ya double chahiye?",
+            "Foam ya spring preference?",
+            "Budget range kya hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": [
+            "size",
+            "material_preference",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_mattress_products",
+            "share_options"
+          ]
+        }
+      },
+      {
+        "id": "product_specific_recliner",
+        "priority": 7,
+        "keywords": {
+          "primary": [
+            "recliner",
+            "manual recliner",
+            "power recliner",
+            "recliner sofa"
+          ],
+          "variations": [
+            "recliner chair",
+            "recliner price"
+          ]
+        },
+        "response": {
+          "script": "Ji sir/mam, recliners available hain — manual aur power dono. Prices ₹25,000 se start hoti hain. Kaunsa type chahiye?",
+          "follow_up_questions": [
+            "Manual ya power recliner chahiye?",
+            "Kitne seater?",
+            "Budget range kya hai?"
+          ]
+        },
+        "context_tracking": {
+          "requires_info": [
+            "type",
+            "budget"
+          ],
+          "next_actions": [
+            "filter_recliner_products",
+            "share_options"
           ]
         }
       }

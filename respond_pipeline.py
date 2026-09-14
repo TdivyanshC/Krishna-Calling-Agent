@@ -302,6 +302,9 @@ def _source_to_static_key(source: str, lang: str) -> Optional[str]:
         "ack_budget":        "ack_budget",
         "not_understood_budget":  "not_understood_budget",
         "not_understood_urgency": "not_understood_urgency",
+        "not_understood_close":   "not_understood_close",
+        "turn_cap_close":         "turn_cap_close",
+        "duration_cap_close":     "duration_cap_close",
     }
 
     # FAQ source tags (from knowledge.py)

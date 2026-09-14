@@ -1873,12 +1873,22 @@ personally call kar rahi hain.
 OFFER: Purana furniture exchange karne par uski value milti hai, aur naye furniture par 25%
 discount — total milakar 43 se 50% tak saving ho sakti hai. Koi fixed end-date nahi hai.
 CATEGORIES COVERED BY THIS OFFER: sofa, bed, dining table, wardrobe, chair.
-STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo — wardrobe/chair ka koi price yahan
-NAHI diya gaya hai, agar koi wardrobe ya chair ka exact price poochhe toh yeh UNKNOWN hai, kabhi
-vague ya generic jawab mat do jaise "achha rate hai"):
-  - Sofa: ₹33,000 se shuru
-  - Bed: ₹71,000 se shuru
-  - Dining set: ₹1,19,000 se shuru
+STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo — OWNER-CONFIRMED price
+sheet, Sep 2026, replaces the earlier website-observed figures used here; see
+new_flows_pricing.py PRICE_LIST for the same numbers as structured data):
+  - Sofa: per-seat pricing — 1 seater ₹7,000-8,000, 2 seater ₹15,000 se, 3 seater
+    ₹21,000-24,000, sofa-cum-bed ₹35,000 se shuru
+  - Bed: single ₹15,000 se, double ₹25,000 se shuru (no confirmed king/storage figure)
+  - Dining set: sheesham 4 seater ₹30,000 se, 6 seater ~₹40,000 se (UNCONFIRMED --
+    owner's own sheet flagged this one, do not state it with full confidence),
+    8 seater ₹50,000 se; marble 4 seater ₹40,000 se, 6 seater ₹65,000 se,
+    8 seater ₹80,000 se
+  - Wardrobe: ₹25,000 se shuru, wooden wardrobe ₹15,000 se
+  - Chair (lounge, part of sofa seating range): koi alag confirmed price nahi hai --
+    per-seat sofa starting point (₹7,000-8,000) bolo, exact price confirm karke
+    baad mein batao
+TV units, coffee/center tables, cabinets, side tables, aur home décor: on request,
+koi price mat bolo yeh sab ke liye.
 SHOWROOMS: Sector 14 Gurgaon, Delhi, Noida — Monday se Sunday, subah 10 baje se raat 8 baje tak.
 NOT COVERED (explicitly UNKNOWN, never answer these): EMI/installment, delivery cost ya time, warranty,
 online ordering, cash on delivery, old furniture buyback/exchange terms, payment methods, discount codes,
@@ -1922,24 +1932,32 @@ _REACT_LLM_UNKNOWN_TEXT_EN = "That's a good question — honestly, I'd like to c
 _FRESH_LLM_FACTS = """STORE: Krishna Furniture. Priya (aap) ek lead ko follow-up call kar rahi hain jisne
 WhatsApp par ek specific product mein interest dikhaya tha -- yeh call ab budget, timeline, aur
 store-visit date poochhne ke liye hai, koi cold sales pitch nahi.
-CATEGORIES (real catalog, 2026-08-23): sofa, bed, wardrobe, dining set, office table, office chair,
-lobby/lounge chair, ottoman/pouffe, TV unit, bedroom chair, garden furniture, center/coffee table.
+CATEGORIES (owner-confirmed price sheet, Sep 2026 -- see new_flows_pricing.py PRICE_LIST):
+sofa/seating, bed, wardrobe, dining set, office table, office chair, mattress, recliner.
+ON REQUEST (no confirmed price, never state a number, say "confirm karke batati hoon"):
+TV unit, coffee/center table, cabinet, side table, home décor, ottoman/pouffe, bedroom chair.
+Lounge/lobby chairs are part of the sofa seating range, not a separate priced category.
 Interior design consultation bhi available hai -- agar koi is baare mein poochhe, unka budget poochho
 aur bataao ki hamare manager unhe personally contact karenge (koi price/scope detail mat do, yeh sirf
 handoff hai).
-STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo -- kisi bhi cheez ka jo yahan nahi hai):
-  - Sofa: 3+2 seater ₹45,000 se, 7 seater ₹65,000 se
-  - Bed: ₹24,000 se, season wood wala ₹50,000 se
-  - Wardrobe: ₹24,000 se
-  - Dining set (4 seater): bina stone ₹35,000 se, stone ke saath ₹55,000 se
-  - Office table: ₹10,000 se
-  - Office chair: ₹4,500 se
-  - Lobby/lounge chair: ₹22,000 se
-  - Ottoman/pouffe: ₹4,000 se
-  - TV unit: ₹25,000 se
-  - Bedroom chair: ₹22,000 se
-  - Garden furniture: ₹25,000 se
-  - Center/coffee table: ₹20,000 se
+STARTING PRICES (sirf yeh, aur koi number kabhi mat bolo -- kisi bhi cheez ka jo yahan nahi hai).
+Replaced 2026-09-14 with the OWNER-CONFIRMED price sheet (Sep 2026), which supersedes the
+2026-08-23 figures and the 2026-09-14-morning website-catalog-verified figures used here
+earlier the same day -- per the owner's own note, this sheet runs BELOW the website-listed
+prices on purpose:
+  - Sofa (per seat): 1 seater ₹7,000-8,000 se, 2 seater ₹15,000 se, 3 seater ₹21,000-24,000 se,
+    sofa-cum-bed ₹35,000 se
+  - Bed: single ₹15,000 se, double ₹25,000 se (no confirmed king/storage figure -- don't state one)
+  - Wardrobe: ₹25,000 se, wooden wardrobe ₹15,000 se
+  - Dining set: sheesham 4 seater ₹30,000 se, 6 seater ~₹40,000 se (UNCONFIRMED, flagged by the
+    owner's own sheet -- hedge this one, e.g. "around ₹40,000, let me confirm exactly"),
+    8 seater ₹50,000 se; marble 4 seater ₹40,000 se, 6 seater ₹65,000 se, 8 seater ₹80,000 se
+  - Office table: ₹10,000-12,000 se
+  - Office chair: ₹6,000 se
+  - Mattress: single ₹10,000-12,000 se, double ₹20,000-25,000 se
+  - Recliner: manual ₹25,000 se, power/recliner ₹35,000 se
+  - Lounge/lobby chair: no distinct confirmed price -- use the sofa per-seat starting point
+    (₹7,000-8,000) and offer to confirm the exact figure
 SHOWROOMS (real 5-store list, 2026-08-23): do stores Gurgaon mein (Atul Kataria Chowk, Sector 14, Old
 Delhi Road; aur Sector 69, Sohna Road, Vatika Chowk ke paas), ek Noida mein (A-2, Sector 10), ek
 Faridabad mein (Sector 28 Metro Station ke saamne), ek Delhi mein (Ghitorni).
@@ -2024,17 +2042,30 @@ ya prefix mat do, sirf jawab bolo."""
 # furniture catalog prices both need to pass this same guard, so it's a
 # union of both, not a replacement of one by the other.
 _REACT_LLM_GROUNDED_PRICES = {
-    "₹33,000", "₹71,000", "₹1,19,000",  # react_a/b/c/call2/call3 exchange offer
-    # 2026-08-23 -- fresh_cta's real 12-category catalog (user-provided).
-    "₹45,000", "₹65,000",   # sofa (3+2 / 7 seater)
-    "₹24,000", "₹50,000",   # bed (standard / season wood)
-    "₹35,000", "₹55,000",   # dining (without / with stone) -- also wardrobe's ₹24,000, already listed
-    "₹10,000",              # office table
-    "₹4,500",               # office chair
-    "₹22,000",              # lobby/lounge chair, also bedroom chair
-    "₹4,000",               # ottoman/pouffe
-    "₹25,000",              # TV unit, also garden furniture
-    "₹20,000",              # center/coffee table
+    # Owner-confirmed price sheet, Sep 2026 -- supersedes both the
+    # 2026-08-23 figures and the 2026-09-14-morning website-catalog
+    # figures. Mirrors new_flows_pricing.py's PRICE_LIST; keep both in sync
+    # by hand. Deliberately does NOT include TV unit/coffee-center
+    # table/cabinet/side table/home décor/ottoman/bedroom chair -- none of
+    # those have a confirmed number on this sheet (on_request=True or
+    # simply not covered), so they must never appear here even though
+    # earlier versions of this set had numbers for some of them.
+    "₹7,000", "₹8,000",     # sofa 1-seater
+    "₹15,000",               # sofa 2-seater; also bed single, wardrobe wooden, garden swing
+    "₹21,000", "₹24,000",   # sofa 3-seater
+    "₹35,000",               # sofa-cum-bed; also recliner (power)
+    "₹25,000",               # bed double; also wardrobe, recliner (manual), table+chair set
+    "₹30,000",               # dining sheesham 4-seater
+    "₹40,000",               # dining sheesham 6-seater (UNCONFIRMED -- see _FRESH_LLM_FACTS
+                              # comment, hedge this one when spoken); also dining marble 4-seater
+    "₹50,000",               # dining sheesham 8-seater
+    "₹65,000",               # dining marble 6-seater
+    "₹80,000",               # dining marble 8-seater
+    "₹10,000", "₹12,000",   # office table; also mattress single
+    "₹6,000",                # office chair
+    "₹20,000",               # mattress double (low end); also center/coffee table (still
+                              # excluded above -- kept here only because it coincides with a
+                              # real mattress figure, not because center-table is grounded)
 }
 
 # Added 2026-08-14 -- confirmed live and reproduced directly (not a fluke):

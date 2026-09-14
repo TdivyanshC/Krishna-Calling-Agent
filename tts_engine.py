@@ -84,6 +84,29 @@ STATIC_RESPONSES = {
         "hi":       "और कब तक चाहिए — कोई जल्दी है, या अभी देख रहे हैं बस?",
         "en":       "And when do you need it — is there a rush or just browsing for now?",
     },
+    # Added 2026-09-14: "ask_product"/"ask_budget" (webhook.py's QUALIFY_PRODUCT/
+    # QUALIFY_BUDGET dead-end reprompts, fired whenever extract_product()/
+    # extract_budget() comes back empty and match_faq_detour() didn't answer
+    # either) had NO entry here at all -- webhook.py hardcoded a single
+    # Hindi-only string and passed whatever audio_lang the caller's session
+    # actually was (hi/hinglish/en) straight to get_speech(). For an English
+    # caller that meant literally requesting Sarvam speak Devanagari text
+    # with target_language_code=en-IN -- confirmed live 2026-09-14 on call
+    # 3139934f-...: "Are you a human or an AI?" (session.lang=en) produced a
+    # freshly-synthesized dyn_1377a7faf8b2.wav that is the Hindi sentence
+    # below spoken by the en-IN model, distinct from (and much worse
+    # sounding than) the same sentence's hi-IN/hinglish takes -- this is
+    # almost certainly the "different voice" the team heard on that call.
+    "ask_product": {
+        "hinglish": "Kya dhundh rahe hain aap — sofa, bed, dining, wardrobe, ya kuch aur?",
+        "hi":       "आप किस तरह का फर्नीचर देखना चाहते हैं — सोफा, बेड, डाइनिंग, वार्डरोब, या कुछ और?",
+        "en":       "What kind of furniture are you looking for — sofa, bed, dining, wardrobe, or something else?",
+    },
+    "ask_budget": {
+        "hinglish": "Budget rough idea bhi chalega — jaise ₹20,000 se ₹50,000 ya isse upar?",
+        "hi":       "Budget rough idea भी चलेगा — जैसे ₹२०,००० से ₹५०,००० या इससे ऊपर?",
+        "en":       "A rough budget idea works too — say, ₹20,000 to ₹50,000, or above that?",
+    },
     "wrap_whatsapp": {
         "hinglish": "Bilkul ji, main aapko WhatsApp pe options bhej rahi hoon. Koi aur sawaal?",
         "hi":       "बिल्कुल जी, मैं आपको WhatsApp पर options भेज रही हूँ। कोई और सवाल?",
@@ -299,6 +322,31 @@ STATIC_RESPONSES = {
         "hinglish": "Maafi chahti hoon, thoda clear nahi hua. Kya aap dobara bol sakte hain?",
         "hi":       "माफी चाहती हूँ, थोड़ा clear नहीं हुआ। क्या आप दोबारा बोल सकते हैं?",
         "en":       "I'm sorry, I didn't quite catch that. Could you say that again?",
+    },
+    # Added 2026-09-14: same missing-entry bug as ask_product/ask_budget above
+    # -- this is the graceful-close line webhook.py plays right before
+    # auto-hanging up on a caller it repeatedly couldn't understand (3
+    # consecutive misses / 5 total). No STATIC_RESPONSES entry existed, so a
+    # non-Hindi caller's very last thing heard on the call was the Hindi
+    # closing line resynthesized in the wrong target_language_code -- the
+    # single worst turn to get this wrong on.
+    "not_understood_close": {
+        "hinglish": "Theek hai, lagta hai abhi line saaf nahi aa rahi. Main WhatsApp par details bhej deti hoon, aaram se dekh liyega. Dhanyavaad!",
+        "hi":       "ठीक है सर, लगता है अभी लाइन साफ़ नहीं आ रही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!",
+        "en":       "That's alright — the line doesn't seem too clear right now. I'll send you the details on WhatsApp so you can look at them whenever's convenient. Thank you!",
+    },
+    # Added 2026-09-14: same missing-entry bug, two more hard safety-net exits
+    # (webhook.py's 25-turn cap and 180s-with-no-real-speech cap) that also
+    # hardcoded Hindi-only text with no STATIC_RESPONSES entry.
+    "turn_cap_close": {
+        "hinglish": "Theek hai, abhi ke liye itna hi. Main WhatsApp par details bhej deti hoon, aaram se dekh liyega. Dhanyavaad!",
+        "hi":       "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!",
+        "en":       "Alright, that's all for now. I'll send you the details on WhatsApp so you can look at them whenever's convenient. Thank you!",
+    },
+    "duration_cap_close": {
+        "hinglish": "Theek hai, abhi ke liye itna hi. Main WhatsApp par details bhej deti hoon, aaram se dekh liyega. Dhanyavaad!",
+        "hi":       "ठीक है सर, अभी के लिए इतना ही। मैं WhatsApp पर details भेज देती हूँ, आराम से देख लीजिएगा। धन्यवाद!",
+        "en":       "Alright, that's all for now. I'll send you the details on WhatsApp so you can look at them whenever's convenient. Thank you!",
     },
 
     # ── Product acknowledgements (plays before budget question) ────────────
